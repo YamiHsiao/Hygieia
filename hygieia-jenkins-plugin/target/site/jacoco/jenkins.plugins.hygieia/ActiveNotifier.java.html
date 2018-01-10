@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="zh"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ActiveNotifier.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Hygieia Publisher Plugin</a> &gt; <a href="index.source.html" class="el_package">jenkins.plugins.hygieia</a> &gt; <span class="el_source">ActiveNotifier.java</span></div><h1>ActiveNotifier.java</h1><pre class="source lang-java linenums">package jenkins.plugins.hygieia;
+
+import com.capitalone.dashboard.model.BuildStatus;
+import com.capitalone.dashboard.model.RepoBranch;
+import com.capitalone.dashboard.model.SCM;
+import com.capitalone.dashboard.request.BinaryArtifactCreateRequest;
+import com.capitalone.dashboard.request.BuildDataCreateRequest;
+import com.capitalone.dashboard.request.CodeQualityCreateRequest;
+import com.capitalone.dashboard.request.DeployDataCreateRequest;
+import com.capitalone.dashboard.request.TestDataCreateRequest;
+import hudson.FilePath;
+import hudson.model.AbstractBuild;
+import hudson.model.BuildListener;
+import hudson.model.Run;
+import hudson.model.TaskListener;
+import hudson.plugins.git.GitSCM;
+import hudson.scm.SubversionSCM;
+import hygieia.builder.*;
+import hygieia.utils.HygieiaUtils;
+
+import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.httpclient.HttpStatus;
+import org.jenkinsci.plugins.multiplescms.MultiSCM;
+import org.json.simple.parser.ParseException;
+
+import java.io.IOException;
+import java.net.URISyntaxException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
+import java.util.logging.Logger;
+
+@SuppressWarnings(&quot;rawtypes&quot;)
+public class ActiveNotifier implements FineGrainedNotifier {
+
+<span class="nc" id="L36">    private static final Logger logger = Logger.getLogger(HygieiaListener.class.getName());</span>
+
+    private HygieiaPublisher publisher;
+    private BuildListener listener;
+
+    public ActiveNotifier(HygieiaPublisher publisher, BuildListener listener) {
+<span class="nc" id="L42">        super();</span>
+<span class="nc" id="L43">        this.publisher = publisher;</span>
+<span class="nc" id="L44">        this.listener = listener;</span>
+<span class="nc" id="L45">    }</span>
+
+    private HygieiaService getHygieiaService(AbstractBuild r) {
+<span class="nc" id="L48">        return publisher.newHygieiaService(r, listener);</span>
+    }
+
+    public void started(AbstractBuild r) {
+<span class="nc bnc" id="L52" title="All 2 branches missed.">        boolean publish = (publisher.getHygieiaArtifact() != null) ||</span>
+<span class="nc bnc" id="L53" title="All 4 branches missed.">                ((publisher.getHygieiaBuild() != null) &amp;&amp; publisher.getHygieiaBuild().isPublishBuildStart()) ||</span>
+<span class="nc bnc" id="L54" title="All 4 branches missed.">                ((publisher.getHygieiaTest() != null) &amp;&amp; publisher.getHygieiaTest().isPublishTestStart()) ||</span>
+<span class="nc bnc" id="L55" title="All 4 branches missed.">                ((publisher.getHygieiaSonar() != null) &amp;&amp; publisher.getHygieiaSonar().isPublishBuildStart()) ||</span>
+<span class="nc bnc" id="L56" title="All 4 branches missed.">                ((publisher.getHygieiaDeploy() != null) &amp;&amp; publisher.getHygieiaDeploy().isPublishDeployStart());</span>
+
+
+<span class="nc bnc" id="L59" title="All 2 branches missed.">        if (publish) {</span>
+<span class="nc" id="L60">            BuildBuilder builder = new BuildBuilder(r, publisher.getDescriptor().getHygieiaJenkinsName(), listener, false, true);</span>
+<span class="nc" id="L61">            HygieiaResponse response = getHygieiaService(r).publishBuildData(builder.getBuildData());</span>
+<span class="nc bnc" id="L62" title="All 2 branches missed.">            if (response.getResponseCode() == HttpStatus.SC_CREATED) {</span>
+<span class="nc" id="L63">                listener.getLogger().println(&quot;Hygieia: Published Build Complete Data. &quot; + response.toString());</span>
+            } else {
+<span class="nc" id="L65">                listener.getLogger().println(&quot;Hygieia: Failed Publishing Build Complete Data. &quot; + response.toString());</span>
+            }
+        }
+
+<span class="nc" id="L69">    }</span>
+
+    public void deleted(AbstractBuild r) {
+<span class="nc" id="L72">    }</span>
+
+
+    public void finalized(AbstractBuild r) {
+
+<span class="nc" id="L77">    }</span>
+
+    public void completed(AbstractBuild r) {
+<span class="nc bnc" id="L80" title="All 4 branches missed.">        boolean publishBuild = (publisher.getHygieiaArtifact() != null) || (publisher.getHygieiaSonar() != null) ||</span>
+<span class="nc bnc" id="L81" title="All 6 branches missed.">                (publisher.getHygieiaBuild() != null) || (publisher.getHygieiaTest() != null) || (publisher.getHygieiaDeploy() != null);</span>
+
+<span class="nc bnc" id="L83" title="All 2 branches missed.">        if (publishBuild) {</span>
+<span class="nc" id="L84">            BuildBuilder builder = new BuildBuilder(r, publisher.getDescriptor().getHygieiaJenkinsName(), listener, true, true);</span>
+<span class="nc" id="L85">            HygieiaResponse buildResponse = getHygieiaService(r).publishBuildData(builder.getBuildData());</span>
+<span class="nc bnc" id="L86" title="All 2 branches missed.">            if (buildResponse.getResponseCode() == HttpStatus.SC_CREATED) {</span>
+<span class="nc" id="L87">                listener.getLogger().println(&quot;Hygieia: Published Build Complete Data. &quot; + buildResponse.toString());</span>
+            } else {
+<span class="nc" id="L89">                listener.getLogger().println(&quot;Hygieia: Failed Publishing Build Complete Data. &quot; + buildResponse.toString());</span>
+            }
+
+<span class="nc bnc" id="L92" title="All 2 branches missed.">            boolean successBuild = (&quot;success&quot;.equalsIgnoreCase(r.getResult().toString()) ||</span>
+<span class="nc bnc" id="L93" title="All 2 branches missed.">                    &quot;unstable&quot;.equalsIgnoreCase(r.getResult().toString()));</span>
+<span class="nc bnc" id="L94" title="All 4 branches missed.">            boolean publishArt = (publisher.getHygieiaArtifact() != null) &amp;&amp; successBuild;</span>
+
+<span class="nc bnc" id="L96" title="All 2 branches missed.">            if (publishArt) {</span>
+<span class="nc" id="L97">                ArtifactBuilder artifactBuilder = new ArtifactBuilder(r, publisher, listener, buildResponse.getResponseValue());</span>
+<span class="nc" id="L98">                Set&lt;BinaryArtifactCreateRequest&gt; requests = artifactBuilder.getArtifacts();</span>
+<span class="nc bnc" id="L99" title="All 2 branches missed.">                for (BinaryArtifactCreateRequest bac : requests) {</span>
+<span class="nc" id="L100">                    HygieiaResponse artifactResponse = getHygieiaService(r).publishArtifactData(bac);</span>
+<span class="nc bnc" id="L101" title="All 2 branches missed.">                    if (artifactResponse.getResponseCode() == HttpStatus.SC_CREATED) {</span>
+<span class="nc" id="L102">                        listener.getLogger().println(&quot;Hygieia: Published Build Artifact Data. Filename=&quot; +</span>
+<span class="nc" id="L103">                                bac.getCanonicalName() + &quot;, Name=&quot; + bac.getArtifactName() + &quot;, Version=&quot; + bac.getArtifactVersion() +</span>
+<span class="nc" id="L104">                                &quot;, Group=&quot; + bac.getArtifactGroup() + &quot;. &quot; + artifactResponse.toString());</span>
+                    } else {
+<span class="nc" id="L106">                        listener.getLogger().println(&quot;Hygieia: Failed Publishing Build Artifact Data. &quot; + bac.getCanonicalName() + &quot;, Name=&quot; + bac.getArtifactName() + &quot;, Version=&quot; + bac.getArtifactVersion() +</span>
+<span class="nc" id="L107">                                &quot;, Group=&quot; + bac.getArtifactGroup() + &quot;. &quot; + artifactResponse.toString());</span>
+                    }
+<span class="nc" id="L109">                }</span>
+            }
+
+<span class="nc bnc" id="L112" title="All 6 branches missed.">            boolean publishTest = (publisher.getHygieiaTest() != null) &amp;&amp; (successBuild || publisher.getHygieiaTest().isPublishEvenBuildFails());</span>
+
+<span class="nc bnc" id="L114" title="All 2 branches missed.">            if (publishTest) {</span>
+//                CucumberTestBuilder(Run run, TaskListener listener, BuildStatus buildStatus, FilePath filePath, String applicationName, String environmentName, String testType, String filePattern, String directory, String jenkinsName, String buildId)
+<span class="nc" id="L116">                BuildStatus buildStatus = BuildStatus.fromString(r.getResult().toString());</span>
+<span class="nc" id="L117">                CucumberTestBuilder cucumberTestBuilder = new CucumberTestBuilder(r, listener, buildStatus, r.getWorkspace(), publisher.getHygieiaTest().getTestApplicationName(),</span>
+<span class="nc" id="L118">                        publisher.getHygieiaTest().getTestEnvironmentName(), publisher.getHygieiaTest().getTestType(), publisher.getHygieiaTest().getTestFileNamePattern(), publisher.getHygieiaTest().getTestResultsDirectory(),</span>
+<span class="nc" id="L119">                        publisher.getDescriptor().getHygieiaJenkinsName(), buildResponse.getResponseValue());</span>
+<span class="nc" id="L120">                TestDataCreateRequest request = cucumberTestBuilder.getTestDataCreateRequest();</span>
+<span class="nc bnc" id="L121" title="All 2 branches missed.">                if (request != null) {</span>
+<span class="nc" id="L122">                    HygieiaResponse testResponse = getHygieiaService(r).publishTestResults(request);</span>
+<span class="nc bnc" id="L123" title="All 2 branches missed.">                    if (testResponse.getResponseCode() == HttpStatus.SC_CREATED) {</span>
+<span class="nc" id="L124">                        listener.getLogger().println(&quot;Hygieia: Published Test Data. &quot; + testResponse.toString());</span>
+                    } else {
+<span class="nc" id="L126">                        listener.getLogger().println(&quot;Hygieia: Failed Publishing Test Data. &quot; + testResponse.toString());</span>
+                    }
+<span class="nc" id="L128">                } else {</span>
+<span class="nc" id="L129">                    listener.getLogger().println(&quot;Hygieia: Published Test Data. Nothing to publish&quot;);</span>
+                }
+            }
+
+<span class="nc bnc" id="L133" title="All 4 branches missed.">            boolean publishSonar = (publisher.getHygieiaSonar() != null) &amp;&amp; successBuild;</span>
+
+<span class="nc bnc" id="L135" title="All 2 branches missed.">            if (publishSonar) {</span>
+                try {
+<span class="nc" id="L137">                    SonarBuilder sonarBuilder = new SonarBuilder(r, listener, publisher.getDescriptor().getHygieiaJenkinsName(), publisher.getHygieiaSonar().getCeQueryIntervalInSeconds(),</span>
+<span class="nc" id="L138">                            publisher.getHygieiaSonar().getCeQueryMaxAttempts(), buildResponse.getResponseValue(), publisher.getDescriptor().isUseProxy());</span>
+<span class="nc" id="L139">                    CodeQualityCreateRequest request = sonarBuilder.getSonarMetrics();</span>
+<span class="nc bnc" id="L140" title="All 2 branches missed.">                    if (request != null) {</span>
+<span class="nc" id="L141">                        HygieiaResponse sonarResponse = getHygieiaService(r).publishSonarResults(request);</span>
+<span class="nc bnc" id="L142" title="All 2 branches missed.">                        if (sonarResponse.getResponseCode() == HttpStatus.SC_CREATED) {</span>
+<span class="nc" id="L143">                            listener.getLogger().println(&quot;Hygieia: Published Sonar Data. &quot; + sonarResponse.toString());</span>
+                        } else {
+<span class="nc" id="L145">                            listener.getLogger().println(&quot;Hygieia: Failed Publishing Sonar Data. &quot; + sonarResponse.toString());</span>
+                        }
+<span class="nc" id="L147">                    } else {</span>
+<span class="nc" id="L148">                        listener.getLogger().println(&quot;Hygieia: Published Sonar Result. Nothing to publish&quot;);</span>
+                    }
+<span class="nc" id="L150">                } catch (IOException | URISyntaxException | ParseException e) {</span>
+<span class="nc" id="L151">                    listener.getLogger().println(&quot;Hygieia: Publishing error&quot; + '\n' + e.getMessage());</span>
+<span class="nc" id="L152">                }</span>
+
+            }
+
+<span class="nc bnc" id="L156" title="All 4 branches missed.">            boolean publishDeploy = (publisher.getHygieiaDeploy() != null) &amp;&amp; successBuild;</span>
+<span class="nc bnc" id="L157" title="All 2 branches missed.">            if (publishDeploy) {</span>
+<span class="nc" id="L158">                DeployBuilder deployBuilder = new DeployBuilder(r, publisher, listener, buildResponse.getResponseValue());</span>
+<span class="nc" id="L159">                Set&lt;DeployDataCreateRequest&gt; requests = deployBuilder.getDeploys();</span>
+<span class="nc bnc" id="L160" title="All 2 branches missed.">                for (DeployDataCreateRequest bac : requests) {</span>
+<span class="nc" id="L161">                    HygieiaResponse deployResponse = getHygieiaService(r).publishDeployData(bac);</span>
+<span class="nc bnc" id="L162" title="All 2 branches missed.">                    if (deployResponse.getResponseCode() == HttpStatus.SC_CREATED) {</span>
+<span class="nc" id="L163">                        listener.getLogger().println(&quot;Hygieia: Published Deploy Data: &quot; + deployResponse.toString());</span>
+                    } else {
+<span class="nc" id="L165">                        listener.getLogger().println(&quot;Hygieia: Failed Publishing Deploy Data:&quot; + deployResponse.toString());</span>
+                    }
+<span class="nc" id="L167">                }</span>
+            }
+        }
+<span class="nc" id="L170">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.0.201801022044</span></div></body></html>

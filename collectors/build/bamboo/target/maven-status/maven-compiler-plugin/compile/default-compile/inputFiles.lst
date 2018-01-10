@@ -1,0 +1,10 @@
+C:\Users\Yami\Downloads\Hygieia-master\Hygieia-master\collectors\build\bamboo\src\main\java\com\capitalone\dashboard\Application.java
+C:\Users\Yami\Downloads\Hygieia-master\Hygieia-master\collectors\build\bamboo\src\main\java\com\capitalone\dashboard\collector\BambooSettings.java
+C:\Users\Yami\Downloads\Hygieia-master\Hygieia-master\collectors\build\bamboo\src\main\java\com\capitalone\dashboard\model\BambooCollector.java
+C:\Users\Yami\Downloads\Hygieia-master\Hygieia-master\collectors\build\bamboo\src\main\java\com\capitalone\dashboard\collector\DefaultBambooClient.java
+C:\Users\Yami\Downloads\Hygieia-master\Hygieia-master\collectors\build\bamboo\src\main\java\com\capitalone\dashboard\model\BambooJob.java
+C:\Users\Yami\Downloads\Hygieia-master\Hygieia-master\collectors\build\bamboo\src\main\java\com\capitalone\dashboard\collector\BambooClient.java
+C:\Users\Yami\Downloads\Hygieia-master\Hygieia-master\collectors\build\bamboo\src\main\java\com\capitalone\dashboard\repository\BambooCollectorRepository.java
+C:\Users\Yami\Downloads\Hygieia-master\Hygieia-master\collectors\build\bamboo\src\main\java\com\capitalone\dashboard\repository\BambooJobRepository.java
+C:\Users\Yami\Downloads\Hygieia-master\Hygieia-master\collectors\build\bamboo\src\main\java\com\capitalone\dashboard\collector\BambooCollectorTask.java
+C:\Users\Yami\Downloads\Hygieia-master\Hygieia-master\collectors\build\bamboo\src\main\java\com\capitalone\dashboard\collector\RestOperationsSupplier.java

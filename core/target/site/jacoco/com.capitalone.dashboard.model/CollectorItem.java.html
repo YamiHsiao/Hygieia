@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="zh"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>CollectorItem.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">com.capitalone.dashboard:core</a> &gt; <a href="index.source.html" class="el_package">com.capitalone.dashboard.model</a> &gt; <span class="el_source">CollectorItem.java</span></div><h1>CollectorItem.java</h1><pre class="source lang-java linenums">package com.capitalone.dashboard.model;
+
+import org.bson.types.ObjectId;
+import org.springframework.data.annotation.Transient;
+import org.springframework.data.mongodb.core.mapping.Document;
+
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+
+/**
+ * &lt;p&gt;
+ *      Represents a unique collection in an external tool. For example, for a CI tool
+ *      the collector item would be a Job. For a project management tool, the collector item
+ *      might be a Scope.
+ * &lt;/p&gt;
+ * &lt;p&gt;
+ *      Each {@link Collector} is responsible for specifying how it's {@link CollectorItem}s are
+ *      uniquely identified by storing key/value pairs in the options Map. The description field will
+ *      be visible to users in the UI to aid in selecting the correct {@link CollectorItem} for their dashboard.
+ *      Ideally, the description will be unique for a given {@link Collector}.
+ * &lt;/p&gt;
+ */
+@Document(collection=&quot;collector_items&quot;)
+<span class="fc" id="L28">public class CollectorItem extends BaseModel {</span>
+
+    private String description;
+    private String niceName;
+    private String environment;
+    private boolean enabled;
+<span class="fc" id="L34">    private List&lt;CollectionError&gt; errors = new ArrayList&lt;&gt;();</span>
+    private boolean pushed;
+    private ObjectId collectorId;
+    private long lastUpdated;
+<span class="fc" id="L38">    private Map&lt;String,Object&gt; options = new HashMap&lt;&gt;();</span>
+
+    @Transient
+    private Collector collector;
+
+    public String getDescription() {
+<span class="fc" id="L44">        return description;</span>
+    }
+
+    public void setDescription(String description) {
+<span class="fc" id="L48">        this.description = description;</span>
+<span class="fc" id="L49">    }</span>
+
+    public boolean isEnabled() {
+<span class="nc" id="L52">        return enabled;</span>
+    }
+
+    public void setEnabled(boolean enabled) {
+<span class="fc" id="L56">        this.enabled = enabled;</span>
+<span class="fc" id="L57">    }</span>
+
+    public ObjectId getCollectorId() {
+<span class="fc" id="L60">        return collectorId;</span>
+    }
+
+    public void setCollectorId(ObjectId collectorId) {
+<span class="fc" id="L64">        this.collectorId = collectorId;</span>
+<span class="fc" id="L65">    }</span>
+
+    public Collector getCollector() {
+<span class="nc" id="L68">        return collector;</span>
+    }
+
+    public void setCollector(Collector collector) {
+<span class="fc" id="L72">        this.collector = collector;</span>
+<span class="fc" id="L73">    }</span>
+
+    public Map&lt;String, Object&gt; getOptions() {
+<span class="fc" id="L76">        return options;</span>
+    }
+
+    public boolean isPushed() {
+<span class="nc" id="L80">        return pushed;</span>
+    }
+
+    public void setPushed(boolean pushed) {
+<span class="nc" id="L84">        this.pushed = pushed;</span>
+<span class="nc" id="L85">    }</span>
+
+    public long getLastUpdated() {
+<span class="nc" id="L88">        return lastUpdated;</span>
+    }
+
+    public void setLastUpdated(long lastUpdated) {
+<span class="nc" id="L92">        this.lastUpdated = lastUpdated;</span>
+<span class="nc" id="L93">    }</span>
+
+    public String getNiceName() {
+<span class="nc" id="L96">        return niceName;</span>
+    }
+
+    public void setNiceName(String niceName) {
+<span class="nc" id="L100">        this.niceName = niceName;</span>
+<span class="nc" id="L101">    }</span>
+
+    public String getEnvironment() {
+<span class="nc" id="L104">        return environment;</span>
+    }
+
+    public void setEnvironment(String environment) {
+<span class="nc" id="L108">        this.environment = environment;</span>
+<span class="nc" id="L109">    }</span>
+
+    public List&lt;CollectionError&gt; getErrors() {
+<span class="nc" id="L112">        return errors;</span>
+    }
+    public int getErrorCount() {
+<span class="nc" id="L115">        return errors.size();</span>
+    }
+
+    /**
+     * Checks for collector items error threshold and resets it if window is met
+     * @param resetWindow - long time in milliseconds after which errors can be reset
+     * @param errorThreshold - number of errors to cross threshold
+     * @return true if (a) errors are within threshold and (b) reset if window is passed.
+     */
+    public boolean checkErrorOrReset (long resetWindow, int errorThreshold) {
+<span class="nc" id="L125">        Optional&lt;CollectionError&gt; lastErrorOptional = errors.stream().max(Comparator.comparingLong(CollectionError::getTimestamp));</span>
+<span class="nc bnc" id="L126" title="All 2 branches missed.">        long lastErrorTimestamp = lastErrorOptional.isPresent() ? lastErrorOptional.get().getTimestamp() : System.currentTimeMillis();</span>
+<span class="nc bnc" id="L127" title="All 2 branches missed.">        if ((System.currentTimeMillis() - lastErrorTimestamp) &gt;= resetWindow) {</span>
+<span class="nc" id="L128">            errors.clear();</span>
+<span class="nc" id="L129">            return true;</span>
+        } else {
+<span class="nc bnc" id="L131" title="All 2 branches missed.">            return (errors.size() &lt;= errorThreshold);</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.6.201602180812</span></div></body></html>

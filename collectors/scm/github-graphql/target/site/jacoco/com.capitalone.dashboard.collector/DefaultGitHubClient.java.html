@@ -1,0 +1,1041 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="zh"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>DefaultGitHubClient.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">com.capitalone.dashboard:github-graphql-scm-collector</a> &gt; <a href="index.source.html" class="el_package">com.capitalone.dashboard.collector</a> &gt; <span class="el_source">DefaultGitHubClient.java</span></div><h1>DefaultGitHubClient.java</h1><pre class="source lang-java linenums">package com.capitalone.dashboard.collector;
+
+import com.capitalone.dashboard.misc.HygieiaException;
+import com.capitalone.dashboard.model.CollectionMode;
+import com.capitalone.dashboard.model.Comment;
+import com.capitalone.dashboard.model.Commit;
+import com.capitalone.dashboard.model.CommitStatus;
+import com.capitalone.dashboard.model.CommitType;
+import com.capitalone.dashboard.model.GitHubGraphQLQuery;
+import com.capitalone.dashboard.model.GitHubParsed;
+import com.capitalone.dashboard.model.GitHubRateLimit;
+import com.capitalone.dashboard.model.GitHubRepo;
+import com.capitalone.dashboard.model.GitRequest;
+import com.capitalone.dashboard.model.GitHubPaging;
+import com.capitalone.dashboard.model.Review;
+import com.capitalone.dashboard.util.Encryption;
+import com.capitalone.dashboard.util.EncryptionException;
+import com.capitalone.dashboard.util.Supplier;
+import org.apache.commons.codec.binary.Base64;
+import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.collections.MapUtils;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+import org.joda.time.DateTime;
+import org.json.simple.JSONArray;
+import org.json.simple.JSONObject;
+import org.json.simple.parser.JSONParser;
+import org.json.simple.parser.ParseException;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.ResponseEntity;
+import org.springframework.stereotype.Component;
+import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestOperations;
+
+import java.net.MalformedURLException;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.regex.Pattern;
+
+/**
+ * GitHubClient implementation that uses SVNKit to fetch information about
+ * Subversion repositories.
+ */
+@Component
+public class DefaultGitHubClient implements GitHubClient {
+<span class="nc" id="L57">    private static final Log LOG = LogFactory.getLog(DefaultGitHubClient.class);</span>
+
+    private final GitHubSettings settings;
+
+    private final RestOperations restOperations;
+
+    private List&lt;Commit&gt; commits;
+    private List&lt;GitRequest&gt; pullRequests;
+    private List&lt;GitRequest&gt; issues;
+<span class="nc" id="L66">    private final List&lt;Pattern&gt; commitExclusionPatterns = new ArrayList&lt;&gt;();</span>
+
+
+    private static final int FIRST_RUN_HISTORY_DEFAULT = 14;
+
+    @Autowired
+    public DefaultGitHubClient(GitHubSettings settings,
+<span class="nc" id="L73">                               Supplier&lt;RestOperations&gt; restOperationsSupplier) {</span>
+<span class="nc" id="L74">        this.settings = settings;</span>
+<span class="nc" id="L75">        this.restOperations = restOperationsSupplier.get();</span>
+
+<span class="nc bnc" id="L77" title="All 2 branches missed.">        if (!CollectionUtils.isEmpty(settings.getNotBuiltCommits())) {</span>
+<span class="nc" id="L78">            settings.getNotBuiltCommits().stream().map(regExStr -&gt; Pattern.compile(regExStr, Pattern.CASE_INSENSITIVE)).forEach(commitExclusionPatterns::add);</span>
+        }
+<span class="nc" id="L80">    }</span>
+
+    private int getFetchCount(boolean firstRun, GitHubRepo repo) {
+<span class="nc bnc" id="L83" title="All 2 branches missed.">        if (firstRun) return 100;</span>
+<span class="nc" id="L84">        long timeDelta = System.currentTimeMillis() - repo.getLastUpdated();</span>
+<span class="nc" id="L85">        return Math.max(5, Math.min(100, Math.round(timeDelta / 60000)));</span>
+    }
+
+    private ResponseEntity&lt;String&gt; getLastPageResponse(GitHubRepo repo) throws RestClientException, MalformedURLException, HygieiaException {
+<span class="nc" id="L89">        String repoUrl = (String) repo.getOptions().get(&quot;url&quot;);</span>
+<span class="nc" id="L90">        GitHubParsed gitHubParsed = new GitHubParsed(repoUrl);</span>
+<span class="nc" id="L91">        String apiUrl = gitHubParsed.getApiUrl();</span>
+
+<span class="nc" id="L93">        String queryUrl = apiUrl.concat(&quot;/commits?sha=&quot; + repo.getBranch()</span>
+                + &quot;&amp;since=1970-01-01T00:00Z&quot;);
+<span class="nc" id="L95">        String decryptedPassword = decryptString(repo.getPassword(), settings.getKey());</span>
+<span class="nc" id="L96">        ResponseEntity&lt;String&gt; response = makeRestCallGet(queryUrl, repo.getUserId(), decryptedPassword);</span>
+
+<span class="nc" id="L98">        HttpHeaders header = response.getHeaders();</span>
+<span class="nc" id="L99">        List&lt;String&gt; link = header.get(&quot;Link&quot;);</span>
+
+<span class="nc bnc" id="L101" title="All 4 branches missed.">        if (link == null || link.isEmpty()) {</span>
+<span class="nc" id="L102">            return response;</span>
+        }
+
+<span class="nc bnc" id="L105" title="All 2 branches missed.">        for (String l : link) {</span>
+<span class="nc bnc" id="L106" title="All 2 branches missed.">            if (l.contains(&quot;rel=\&quot;next\&quot;&quot;)) {</span>
+<span class="nc" id="L107">                String[] parts = l.split(&quot;,&quot;);</span>
+<span class="nc bnc" id="L108" title="All 2 branches missed.">                if (parts.length &gt; 0) {</span>
+<span class="nc" id="L109">                    response = Arrays.stream(parts).filter(part -&gt; part.contains(&quot;rel=\&quot;last\&quot;&quot;)).map(part -&gt; part.split(&quot;;&quot;)[0]).map(lastPageUrl -&gt; lastPageUrl.replaceFirst(&quot;&lt;&quot;, &quot;&quot;)).map(lastPageUrl -&gt; lastPageUrl.replaceFirst(&quot;&gt;&quot;, &quot;&quot;).trim()).findFirst().map(lastPageUrl -&gt; makeRestCallGet(lastPageUrl, repo.getUserId(), decryptedPassword)).orElse(response);</span>
+                }
+            }
+<span class="nc" id="L112">        }</span>
+<span class="nc" id="L113">        return response;</span>
+    }
+
+    public Commit getFirstEverCommit(GitHubRepo repo) throws RestClientException, MalformedURLException, HygieiaException {
+<span class="nc" id="L117">        ResponseEntity&lt;String&gt; response = getLastPageResponse(repo);</span>
+<span class="nc" id="L118">        JSONArray jsonArray = parseAsArray(response);</span>
+<span class="nc" id="L119">        JSONObject jsonObject = (JSONObject) jsonArray.get(jsonArray.size() - 1);</span>
+<span class="nc" id="L120">        String sha = str(jsonObject, &quot;sha&quot;);</span>
+<span class="nc" id="L121">        JSONObject commitObject = (JSONObject) jsonObject.get(&quot;commit&quot;);</span>
+<span class="nc" id="L122">        JSONObject commitAuthorObject = (JSONObject) commitObject.get(&quot;author&quot;);</span>
+<span class="nc" id="L123">        String message = str(commitObject, &quot;message&quot;);</span>
+<span class="nc" id="L124">        String author = str(commitAuthorObject, &quot;name&quot;);</span>
+<span class="nc" id="L125">        long timestamp = new DateTime(str(commitAuthorObject, &quot;date&quot;))</span>
+<span class="nc" id="L126">                .getMillis();</span>
+<span class="nc" id="L127">        JSONObject authorObject = (JSONObject) jsonObject.get(&quot;author&quot;);</span>
+<span class="nc" id="L128">        String authorLogin = &quot;&quot;;</span>
+<span class="nc bnc" id="L129" title="All 2 branches missed.">        if (authorObject != null) {</span>
+<span class="nc" id="L130">            authorLogin = str(authorObject, &quot;login&quot;);</span>
+        }
+<span class="nc" id="L132">        JSONArray parents = (JSONArray) jsonObject.get(&quot;parents&quot;);</span>
+<span class="nc" id="L133">        List&lt;String&gt; parentShas = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L134" title="All 2 branches missed.">        if (parents != null) {</span>
+<span class="nc bnc" id="L135" title="All 2 branches missed.">            for (Object parentObj : parents) {</span>
+<span class="nc" id="L136">                parentShas.add(str((JSONObject) parentObj, &quot;sha&quot;));</span>
+<span class="nc" id="L137">            }</span>
+        }
+
+<span class="nc" id="L140">        Commit commit = new Commit();</span>
+<span class="nc" id="L141">        commit.setTimestamp(System.currentTimeMillis());</span>
+<span class="nc" id="L142">        commit.setScmUrl(repo.getRepoUrl());</span>
+<span class="nc" id="L143">        commit.setScmBranch(repo.getBranch());</span>
+<span class="nc" id="L144">        commit.setScmRevisionNumber(sha);</span>
+<span class="nc" id="L145">        commit.setScmParentRevisionNumbers(parentShas);</span>
+<span class="nc" id="L146">        commit.setScmAuthor(author);</span>
+<span class="nc" id="L147">        commit.setScmAuthorLogin(authorLogin);</span>
+<span class="nc" id="L148">        commit.setScmCommitLog(message);</span>
+<span class="nc" id="L149">        commit.setScmCommitTimestamp(timestamp);</span>
+<span class="nc" id="L150">        commit.setNumberOfChanges(1);</span>
+<span class="nc" id="L151">        commit.setType(getCommitType(message));</span>
+<span class="nc" id="L152">        commit.setFirstEverCommit(true);</span>
+
+<span class="nc" id="L154">        return commit;</span>
+    }
+
+
+    @Override
+    public List&lt;Commit&gt; getCommits() {
+<span class="nc" id="L160">        return commits;</span>
+    }
+
+    @Override
+    public List&lt;GitRequest&gt; getPulls() {
+<span class="nc" id="L165">        return pullRequests;</span>
+    }
+
+    @Override
+    public List&lt;GitRequest&gt; getIssues() {
+<span class="nc" id="L170">        return issues;</span>
+    }
+
+
+    @Override
+    public void fireGraphQL(GitHubRepo repo, boolean firstRun, Map&lt;Long, String&gt; existingPRMap, Map&lt;Long, String&gt; existingIssueMap) throws RestClientException, MalformedURLException, HygieiaException {
+        // format URL
+<span class="nc" id="L177">        String repoUrl = (String) repo.getOptions().get(&quot;url&quot;);</span>
+<span class="nc" id="L178">        GitHubParsed gitHubParsed = new GitHubParsed(repoUrl);</span>
+<span class="nc" id="L179">        String graphQLurl = gitHubParsed.getGraphQLUrl();</span>
+
+
+<span class="nc" id="L182">        commits = new LinkedList&lt;&gt;();</span>
+<span class="nc" id="L183">        pullRequests = new LinkedList&lt;&gt;();</span>
+<span class="nc" id="L184">        issues = new LinkedList&lt;&gt;();</span>
+
+<span class="nc" id="L186">        long historyTimeStamp = getTimeStampMills(getRunDate(repo, firstRun));</span>
+
+<span class="nc" id="L188">        String decryptedPassword = decryptString(repo.getPassword(), settings.getKey());</span>
+<span class="nc" id="L189">        boolean alldone = false;</span>
+
+<span class="nc" id="L191">        GitHubPaging dummyPRPaging = isThereNewPRorIssue(gitHubParsed, repo, decryptedPassword, existingPRMap, &quot;pull&quot;, firstRun);</span>
+<span class="nc" id="L192">        GitHubPaging dummyIssuePaging = isThereNewPRorIssue(gitHubParsed, repo, decryptedPassword, existingIssueMap, &quot;issue&quot;, firstRun);</span>
+<span class="nc" id="L193">        GitHubPaging dummyCommitPaging = new GitHubPaging();</span>
+<span class="nc" id="L194">        dummyCommitPaging.setLastPage(false);</span>
+
+<span class="nc" id="L196">        JSONObject query = buildQuery(true, firstRun, gitHubParsed, repo, dummyCommitPaging, dummyPRPaging, dummyIssuePaging);</span>
+
+<span class="nc" id="L198">        int loopCount = 1;</span>
+<span class="nc bnc" id="L199" title="All 2 branches missed.">        while (!alldone) {</span>
+<span class="nc" id="L200">            LOG.debug(&quot;Executing loop &quot; + loopCount + &quot; for &quot; + gitHubParsed.getOrgName() + &quot;/&quot; + gitHubParsed.getRepoName());</span>
+<span class="nc" id="L201">            ResponseEntity&lt;String&gt; response = makeRestCallPost(graphQLurl, repo.getUserId(), decryptedPassword, query);</span>
+<span class="nc" id="L202">            JSONObject data = (JSONObject) parseAsObject(response).get(&quot;data&quot;);</span>
+<span class="nc" id="L203">            JSONArray errors = getArray(parseAsObject(response), &quot;errors&quot;);</span>
+
+<span class="nc bnc" id="L205" title="All 2 branches missed.">            if (!CollectionUtils.isEmpty(errors)) {</span>
+<span class="nc" id="L206">                throw new HygieiaException(&quot;Error in GraphQL query:&quot; + errors.toJSONString(), HygieiaException.JSON_FORMAT_ERROR);</span>
+            }
+<span class="nc bnc" id="L208" title="All 2 branches missed.">            if (data != null) {</span>
+<span class="nc" id="L209">                JSONObject repository = (JSONObject) data.get(&quot;repository&quot;);</span>
+
+<span class="nc" id="L211">                GitHubPaging pullPaging = processPullRequest((JSONObject) repository.get(&quot;pullRequests&quot;), repo, existingPRMap, historyTimeStamp);</span>
+<span class="nc" id="L212">                LOG.debug(&quot;--- Processed &quot; + pullPaging.getCurrentCount() + &quot; of total &quot; + pullPaging.getTotalCount() + &quot; pull requests&quot;);</span>
+
+<span class="nc" id="L214">                GitHubPaging issuePaging = processIssues((JSONObject) repository.get(&quot;issues&quot;), gitHubParsed, existingIssueMap, historyTimeStamp);</span>
+<span class="nc" id="L215">                LOG.debug(&quot;--- Processed &quot; + issuePaging.getCurrentCount() + &quot; of total &quot; + issuePaging.getTotalCount() + &quot; issues&quot;);</span>
+
+<span class="nc" id="L217">                GitHubPaging commitPaging = processCommits((JSONObject) repository.get(&quot;ref&quot;), repo);</span>
+<span class="nc" id="L218">                LOG.debug(&quot;--- Processed &quot; + commitPaging.getCurrentCount() + &quot; commits&quot;);</span>
+
+<span class="nc bnc" id="L220" title="All 6 branches missed.">                alldone = pullPaging.isLastPage() &amp;&amp; commitPaging.isLastPage() &amp;&amp; issuePaging.isLastPage();</span>
+
+<span class="nc" id="L222">                query = buildQuery(false, firstRun, gitHubParsed, repo, commitPaging, pullPaging, issuePaging);</span>
+
+<span class="nc" id="L224">                loopCount++;</span>
+            }
+<span class="nc" id="L226">        }</span>
+<span class="nc" id="L227">        connectCommitToPulls();</span>
+<span class="nc" id="L228">        LOG.info(&quot;-- Collected &quot; + commits.size() + &quot; Commits, &quot; + pullRequests.size() + &quot; Pull Requests, &quot; + issues.size() + &quot; Issues since &quot; + getRunDate(repo, firstRun));</span>
+<span class="nc" id="L229">    }</span>
+
+    @SuppressWarnings(&quot;PMD.NPathComplexity&quot;)
+    private GitHubPaging isThereNewPRorIssue(GitHubParsed gitHubParsed, GitHubRepo repo, String decryptedPassword, Map&lt;Long, String&gt; existingMap, String type, boolean firstRun) throws HygieiaException {
+
+<span class="nc" id="L234">        GitHubPaging paging = new GitHubPaging();</span>
+<span class="nc" id="L235">        paging.setLastPage(true);</span>
+
+<span class="nc bnc" id="L237" title="All 2 branches missed.">        if (firstRun) {</span>
+<span class="nc" id="L238">            paging.setLastPage(false);</span>
+<span class="nc" id="L239">            return paging;</span>
+        }
+
+<span class="nc bnc" id="L242" title="All 2 branches missed.">        String queryString = &quot;pull&quot;.equalsIgnoreCase(type) ? GitHubGraphQLQuery.QUERY_NEW_PR_CHECK : GitHubGraphQLQuery.QUERY_NEW_ISSUE_CHECK;</span>
+<span class="nc" id="L243">        JSONObject query = new JSONObject();</span>
+<span class="nc" id="L244">        JSONObject variableJSON = new JSONObject();</span>
+<span class="nc" id="L245">        variableJSON.put(&quot;owner&quot;, gitHubParsed.getOrgName());</span>
+<span class="nc" id="L246">        variableJSON.put(&quot;name&quot;, gitHubParsed.getRepoName());</span>
+<span class="nc bnc" id="L247" title="All 2 branches missed.">        if (&quot;pull&quot;.equalsIgnoreCase(type)) {</span>
+<span class="nc" id="L248">            variableJSON.put(&quot;branch&quot;, repo.getBranch());</span>
+        }
+<span class="nc" id="L250">        query.put(&quot;query&quot;, queryString);</span>
+<span class="nc" id="L251">        query.put(&quot;variables&quot;, variableJSON.toString());</span>
+
+
+<span class="nc" id="L254">        ResponseEntity&lt;String&gt; response = makeRestCallPost(gitHubParsed.getGraphQLUrl(), repo.getUserId(), decryptedPassword, query);</span>
+<span class="nc" id="L255">        JSONObject data = (JSONObject) parseAsObject(response).get(&quot;data&quot;);</span>
+<span class="nc" id="L256">        JSONArray errors = getArray(parseAsObject(response), &quot;errors&quot;);</span>
+
+<span class="nc bnc" id="L258" title="All 2 branches missed.">        if (!CollectionUtils.isEmpty(errors)) {</span>
+<span class="nc" id="L259">            throw new HygieiaException(&quot;Error in GraphQL query:&quot; + errors.toJSONString(), HygieiaException.JSON_FORMAT_ERROR);</span>
+        }
+
+<span class="nc bnc" id="L262" title="All 2 branches missed.">        if (data == null) return paging;</span>
+<span class="nc" id="L263">        JSONObject repository = (JSONObject) data.get(&quot;repository&quot;);</span>
+<span class="nc bnc" id="L264" title="All 2 branches missed.">        JSONObject requestObject = &quot;pull&quot;.equalsIgnoreCase(type) ? (JSONObject) repository.get(&quot;pullRequests&quot;) : (JSONObject) repository.get(&quot;issues&quot;);</span>
+<span class="nc bnc" id="L265" title="All 2 branches missed.">        if (requestObject == null) return paging;</span>
+
+<span class="nc" id="L267">        JSONArray edges = getArray(requestObject, &quot;edges&quot;);</span>
+<span class="nc bnc" id="L268" title="All 2 branches missed.">        if (CollectionUtils.isEmpty(edges)) return paging;</span>
+
+<span class="nc" id="L270">        int index = 0;</span>
+<span class="nc bnc" id="L271" title="All 2 branches missed.">        for (Object o : edges) {</span>
+<span class="nc" id="L272">            JSONObject node = (JSONObject) ((JSONObject) o).get(&quot;node&quot;);</span>
+<span class="nc bnc" id="L273" title="All 2 branches missed.">            if (node == null) return paging;</span>
+<span class="nc" id="L274">            String updated = str(node, &quot;updatedAt&quot;);</span>
+<span class="nc" id="L275">            long updatedTimestamp = getTimeStampMills(updated);</span>
+<span class="nc" id="L276">            String number = str(node, &quot;number&quot;);</span>
+<span class="nc" id="L277">            boolean stop =</span>
+<span class="nc bnc" id="L278" title="All 6 branches missed.">                    ((!MapUtils.isEmpty(existingMap) &amp;&amp; existingMap.get(updatedTimestamp) != null) &amp;&amp; (Objects.equals(existingMap.get(updatedTimestamp), number)));</span>
+<span class="nc bnc" id="L279" title="All 2 branches missed.">            if (stop) {</span>
+<span class="nc" id="L280">                break;</span>
+            }
+<span class="nc" id="L282">            index++;</span>
+<span class="nc" id="L283">        }</span>
+<span class="nc bnc" id="L284" title="All 2 branches missed.">        paging.setLastPage(index == 0);</span>
+<span class="nc" id="L285">        return paging;</span>
+    }
+
+    /**
+     * Normal merge: Match PR's commit sha's with commit list
+     * Squash merge: Match PR's merge sha's with commit list
+     * Rebase merge: Match PR's commit's &quot;message&quot;+&quot;author name&quot;+&quot;date&quot; with commit list
+     * &lt;p&gt;
+     * If match found, set the commit's PR number and possibly set the PR merge type
+     * &lt;p&gt;
+     * For setting type:
+     * If PR commit's SHAs are all found in commit stream, then the commit for the merge sha is a merge commit.
+     * In all other cases it is a new commit
+     */
+
+    private void connectCommitToPulls() {
+<span class="nc" id="L301">        List&lt;Commit&gt; newCommitList = new LinkedList&lt;&gt;();</span>
+
+        //TODO: Need to optimize this method
+<span class="nc bnc" id="L304" title="All 2 branches missed.">        for (Commit commit : commits) {</span>
+<span class="nc" id="L305">            Iterator&lt;GitRequest&gt; pIter = pullRequests.iterator();</span>
+<span class="nc" id="L306">            boolean foundPull = false;</span>
+<span class="nc bnc" id="L307" title="All 4 branches missed.">            while (!foundPull &amp;&amp; pIter.hasNext()) {</span>
+<span class="nc" id="L308">                GitRequest pull = pIter.next();</span>
+<span class="nc bnc" id="L309" title="All 2 branches missed.">                if (Objects.equals(pull.getScmRevisionNumber(), commit.getScmRevisionNumber())) {</span>
+<span class="nc" id="L310">                    foundPull = true;</span>
+<span class="nc" id="L311">                    commit.setPullNumber(pull.getNumber());</span>
+                } else {
+<span class="nc" id="L313">                    List&lt;Commit&gt; prCommits = pull.getCommits();</span>
+<span class="nc" id="L314">                    boolean foundCommit = false;</span>
+<span class="nc" id="L315">                    Iterator&lt;Commit&gt; cIter = prCommits.iterator();</span>
+<span class="nc bnc" id="L316" title="All 4 branches missed.">                    while (!foundCommit &amp;&amp; cIter.hasNext()) {</span>
+<span class="nc" id="L317">                        Commit loopCommit = cIter.next();</span>
+<span class="nc bnc" id="L318" title="All 2 branches missed.">                        if (Objects.equals(commit.getScmAuthor(), loopCommit.getScmAuthor()) &amp;&amp;</span>
+<span class="nc bnc" id="L319" title="All 2 branches missed.">                                (commit.getScmCommitTimestamp() == loopCommit.getScmCommitTimestamp()) &amp;&amp;</span>
+<span class="nc bnc" id="L320" title="All 2 branches missed.">                                Objects.equals(commit.getScmCommitLog(), loopCommit.getScmCommitLog())) {</span>
+<span class="nc" id="L321">                            foundCommit = true;</span>
+<span class="nc" id="L322">                            foundPull = true;</span>
+<span class="nc" id="L323">                            commit.setPullNumber(pull.getNumber());</span>
+                        }
+<span class="nc" id="L325">                    }</span>
+                }
+<span class="nc" id="L327">            }</span>
+<span class="nc" id="L328">            newCommitList.add(commit);</span>
+<span class="nc" id="L329">        }</span>
+<span class="nc" id="L330">        commits = newCommitList;</span>
+<span class="nc" id="L331">    }</span>
+
+    @SuppressWarnings({&quot;PMD.ExcessiveMethodLength&quot;, &quot;PMD.NcssMethodCount&quot;})
+    private JSONObject buildQuery(boolean firstTime, boolean firstRun, GitHubParsed gitHubParsed, GitHubRepo repo, GitHubPaging commitPaging, GitHubPaging pullPaging, GitHubPaging issuePaging) {
+<span class="nc" id="L335">        CollectionMode mode = getCollectionMode(firstTime, commitPaging, pullPaging, issuePaging);</span>
+<span class="nc" id="L336">        JSONObject jsonObj = new JSONObject();</span>
+        String query;
+<span class="nc" id="L338">        JSONObject variableJSON = new JSONObject();</span>
+<span class="nc" id="L339">        variableJSON.put(&quot;owner&quot;, gitHubParsed.getOrgName());</span>
+<span class="nc" id="L340">        variableJSON.put(&quot;name&quot;, gitHubParsed.getRepoName());</span>
+<span class="nc" id="L341">        variableJSON.put(&quot;fetchCount&quot;, getFetchCount(firstRun, repo));</span>
+
+
+<span class="nc" id="L344">        LOG.debug(&quot;Collection Mode =&quot; + mode.toString());</span>
+<span class="nc bnc" id="L345" title="All 13 branches missed.">        switch (mode) {</span>
+            case FirstTimeAll:
+<span class="nc" id="L347">                query = GitHubGraphQLQuery.QUERY_BASE_ALL_FIRST + GitHubGraphQLQuery.QUERY_PULL_HEADER_FIRST + GitHubGraphQLQuery.QUERY_PULL_MAIN + GitHubGraphQLQuery.QUERY_COMMIT_HEADER_FIRST + GitHubGraphQLQuery.QUERY_COMMIT_MAIN + GitHubGraphQLQuery.QUERY_ISSUES_HEADER_FIRST + GitHubGraphQLQuery.QUERY_ISSUE_MAIN + GitHubGraphQLQuery.QUERY_END;</span>
+<span class="nc" id="L348">                variableJSON.put(&quot;since&quot;, getRunDate(repo, firstRun));</span>
+<span class="nc" id="L349">                variableJSON.put(&quot;branch&quot;, repo.getBranch());</span>
+<span class="nc" id="L350">                jsonObj.put(&quot;query&quot;, query);</span>
+<span class="nc" id="L351">                jsonObj.put(&quot;variables&quot;, variableJSON.toString());</span>
+<span class="nc" id="L352">                break;</span>
+
+
+            case FirstTimeCommitOnly:
+<span class="nc" id="L356">                query = GitHubGraphQLQuery.QUERY_BASE_ALL_FIRST + GitHubGraphQLQuery.QUERY_COMMIT_HEADER_FIRST + GitHubGraphQLQuery.QUERY_COMMIT_MAIN + GitHubGraphQLQuery.QUERY_END;</span>
+<span class="nc" id="L357">                variableJSON.put(&quot;since&quot;, getRunDate(repo, firstRun));</span>
+<span class="nc" id="L358">                variableJSON.put(&quot;branch&quot;, repo.getBranch());</span>
+<span class="nc" id="L359">                jsonObj.put(&quot;query&quot;, query);</span>
+<span class="nc" id="L360">                jsonObj.put(&quot;variables&quot;, variableJSON.toString());</span>
+<span class="nc" id="L361">                break;</span>
+
+            case FirstTimeCommitAndIssue:
+<span class="nc" id="L364">                query = GitHubGraphQLQuery.QUERY_BASE_ALL_FIRST + GitHubGraphQLQuery.QUERY_COMMIT_HEADER_FIRST + GitHubGraphQLQuery.QUERY_COMMIT_MAIN + GitHubGraphQLQuery.QUERY_ISSUES_HEADER_FIRST + GitHubGraphQLQuery.QUERY_ISSUE_MAIN + GitHubGraphQLQuery.QUERY_END;</span>
+<span class="nc" id="L365">                variableJSON.put(&quot;since&quot;, getRunDate(repo, firstRun));</span>
+<span class="nc" id="L366">                variableJSON.put(&quot;branch&quot;, repo.getBranch());</span>
+<span class="nc" id="L367">                jsonObj.put(&quot;query&quot;, query);</span>
+<span class="nc" id="L368">                jsonObj.put(&quot;variables&quot;, variableJSON.toString());</span>
+<span class="nc" id="L369">                break;</span>
+
+            case FirstTimeCommitAndPull:
+<span class="nc" id="L372">                query = GitHubGraphQLQuery.QUERY_BASE_ALL_FIRST + GitHubGraphQLQuery.QUERY_PULL_HEADER_FIRST + GitHubGraphQLQuery.QUERY_PULL_MAIN + GitHubGraphQLQuery.QUERY_COMMIT_HEADER_FIRST + GitHubGraphQLQuery.QUERY_COMMIT_MAIN + GitHubGraphQLQuery.QUERY_END;</span>
+<span class="nc" id="L373">                variableJSON.put(&quot;since&quot;, getRunDate(repo, firstRun));</span>
+<span class="nc" id="L374">                variableJSON.put(&quot;branch&quot;, repo.getBranch());</span>
+<span class="nc" id="L375">                jsonObj.put(&quot;query&quot;, query);</span>
+<span class="nc" id="L376">                jsonObj.put(&quot;variables&quot;, variableJSON.toString());</span>
+<span class="nc" id="L377">                break;</span>
+
+            case CommitOnly:
+<span class="nc" id="L380">                query = GitHubGraphQLQuery.QUERY_BASE_COMMIT_ONLY_AFTER + GitHubGraphQLQuery.QUERY_COMMIT_HEADER_AFTER + GitHubGraphQLQuery.QUERY_COMMIT_MAIN + GitHubGraphQLQuery.QUERY_END;</span>
+<span class="nc" id="L381">                variableJSON.put(&quot;since&quot;, getRunDate(repo, firstRun));</span>
+<span class="nc" id="L382">                variableJSON.put(&quot;afterCommit&quot;, commitPaging.getCursor());</span>
+<span class="nc" id="L383">                variableJSON.put(&quot;branch&quot;, repo.getBranch());</span>
+
+<span class="nc" id="L385">                jsonObj.put(&quot;query&quot;, query);</span>
+<span class="nc" id="L386">                jsonObj.put(&quot;variables&quot;, variableJSON.toString());</span>
+<span class="nc" id="L387">                break;</span>
+
+
+            case PullOnly:
+<span class="nc" id="L391">                query = GitHubGraphQLQuery.QUERY_BASE_PULL_ONLY_AFTER + GitHubGraphQLQuery.QUERY_PULL_HEADER_AFTER + GitHubGraphQLQuery.QUERY_PULL_MAIN + GitHubGraphQLQuery.QUERY_END;</span>
+<span class="nc" id="L392">                variableJSON.put(&quot;afterPull&quot;, pullPaging.getCursor());</span>
+<span class="nc" id="L393">                variableJSON.put(&quot;branch&quot;, repo.getBranch());</span>
+<span class="nc" id="L394">                jsonObj.put(&quot;query&quot;, query);</span>
+<span class="nc" id="L395">                jsonObj.put(&quot;variables&quot;, variableJSON.toString());</span>
+<span class="nc" id="L396">                break;</span>
+
+
+            case IssueOnly:
+<span class="nc" id="L400">                query = GitHubGraphQLQuery.QUERY_BASE_ISSUE_ONLY_AFTER + GitHubGraphQLQuery.QUERY_ISSUES_HEADER_AFTER + GitHubGraphQLQuery.QUERY_ISSUE_MAIN + GitHubGraphQLQuery.QUERY_END;</span>
+<span class="nc" id="L401">                variableJSON.put(&quot;afterIssue&quot;, issuePaging.getCursor());</span>
+<span class="nc" id="L402">                jsonObj.put(&quot;query&quot;, query);</span>
+<span class="nc" id="L403">                jsonObj.put(&quot;variables&quot;, variableJSON.toString());</span>
+<span class="nc" id="L404">                break;</span>
+
+
+            case CommitAndIssue:
+<span class="nc" id="L408">                query = GitHubGraphQLQuery.QUERY_BASE_COMMIT_AND_ISSUE_AFTER + GitHubGraphQLQuery.QUERY_COMMIT_HEADER_AFTER + GitHubGraphQLQuery.QUERY_COMMIT_MAIN + GitHubGraphQLQuery.QUERY_ISSUES_HEADER_AFTER + GitHubGraphQLQuery.QUERY_ISSUE_MAIN + GitHubGraphQLQuery.QUERY_END;</span>
+<span class="nc" id="L409">                variableJSON.put(&quot;afterIssue&quot;, issuePaging.getCursor());</span>
+<span class="nc" id="L410">                variableJSON.put(&quot;afterCommit&quot;, commitPaging.getCursor());</span>
+<span class="nc" id="L411">                variableJSON.put(&quot;since&quot;, getRunDate(repo, firstRun));</span>
+<span class="nc" id="L412">                variableJSON.put(&quot;branch&quot;, repo.getBranch());</span>
+
+<span class="nc" id="L414">                jsonObj.put(&quot;query&quot;, query);</span>
+<span class="nc" id="L415">                jsonObj.put(&quot;variables&quot;, variableJSON.toString());</span>
+<span class="nc" id="L416">                break;</span>
+
+
+            case CommitAndPull:
+<span class="nc" id="L420">                query = GitHubGraphQLQuery.QUERY_BASE_COMMIT_AND_PULL_AFTER + GitHubGraphQLQuery.QUERY_PULL_HEADER_AFTER + GitHubGraphQLQuery.QUERY_PULL_MAIN + GitHubGraphQLQuery.QUERY_COMMIT_HEADER_AFTER + GitHubGraphQLQuery.QUERY_COMMIT_MAIN + GitHubGraphQLQuery.QUERY_END;</span>
+<span class="nc" id="L421">                variableJSON.put(&quot;since&quot;, getRunDate(repo, firstRun));</span>
+<span class="nc" id="L422">                variableJSON.put(&quot;afterPull&quot;, pullPaging.getCursor());</span>
+<span class="nc" id="L423">                variableJSON.put(&quot;afterCommit&quot;, commitPaging.getCursor());</span>
+<span class="nc" id="L424">                variableJSON.put(&quot;branch&quot;, repo.getBranch());</span>
+<span class="nc" id="L425">                jsonObj.put(&quot;query&quot;, query);</span>
+<span class="nc" id="L426">                jsonObj.put(&quot;variables&quot;, variableJSON.toString());</span>
+<span class="nc" id="L427">                break;</span>
+
+
+            case PullAndIssue:
+<span class="nc" id="L431">                query = GitHubGraphQLQuery.QUERY_BASE_ISSUE_AND_PULL_AFTER + GitHubGraphQLQuery.QUERY_PULL_HEADER_AFTER + GitHubGraphQLQuery.QUERY_PULL_MAIN + GitHubGraphQLQuery.QUERY_ISSUES_HEADER_AFTER + GitHubGraphQLQuery.QUERY_ISSUE_MAIN + GitHubGraphQLQuery.QUERY_END;</span>
+<span class="nc" id="L432">                variableJSON.put(&quot;afterPull&quot;, pullPaging.getCursor());</span>
+<span class="nc" id="L433">                variableJSON.put(&quot;afterIssue&quot;, issuePaging.getCursor());</span>
+<span class="nc" id="L434">                variableJSON.put(&quot;branch&quot;, repo.getBranch());</span>
+<span class="nc" id="L435">                jsonObj.put(&quot;query&quot;, query);</span>
+<span class="nc" id="L436">                jsonObj.put(&quot;variables&quot;, variableJSON.toString());</span>
+<span class="nc" id="L437">                break;</span>
+
+
+            case All:
+<span class="nc" id="L441">                query = GitHubGraphQLQuery.QUERY_BASE_ALL_AFTER + GitHubGraphQLQuery.QUERY_COMMIT_HEADER_AFTER + GitHubGraphQLQuery.QUERY_COMMIT_MAIN + GitHubGraphQLQuery.QUERY_PULL_HEADER_AFTER + GitHubGraphQLQuery.QUERY_PULL_MAIN + GitHubGraphQLQuery.QUERY_ISSUES_HEADER_AFTER + GitHubGraphQLQuery.QUERY_ISSUE_MAIN + GitHubGraphQLQuery.QUERY_END;</span>
+<span class="nc" id="L442">                variableJSON.put(&quot;since&quot;, getRunDate(repo, firstRun));</span>
+<span class="nc" id="L443">                variableJSON.put(&quot;afterPull&quot;, pullPaging.getCursor());</span>
+<span class="nc" id="L444">                variableJSON.put(&quot;afterCommit&quot;, commitPaging.getCursor());</span>
+<span class="nc" id="L445">                variableJSON.put(&quot;afterIssue&quot;, issuePaging.getCursor());</span>
+<span class="nc" id="L446">                variableJSON.put(&quot;branch&quot;, repo.getBranch());</span>
+<span class="nc" id="L447">                jsonObj.put(&quot;query&quot;, query);</span>
+<span class="nc" id="L448">                jsonObj.put(&quot;variables&quot;, variableJSON.toString());</span>
+<span class="nc" id="L449">                break;</span>
+
+
+            case None:
+<span class="nc" id="L453">                jsonObj = null;</span>
+<span class="nc" id="L454">                break;</span>
+
+
+            default:
+<span class="nc" id="L458">                jsonObj = null;</span>
+                break;
+
+        }
+<span class="nc" id="L462">        return jsonObj;</span>
+    }
+
+    @SuppressWarnings({&quot;PMD.NPathComplexity&quot;, &quot;PMD.ExcessiveMethodLength&quot;, &quot;PMD.AvoidBranchingStatementAsLastInLoop&quot;, &quot;PMD.EmptyIfStmt&quot;})
+    private CollectionMode getCollectionMode(boolean firstTime, GitHubPaging commitPaging, GitHubPaging pullPaging, GitHubPaging issuePaging) {
+<span class="nc bnc" id="L467" title="All 2 branches missed.">        if (firstTime) {</span>
+<span class="nc bnc" id="L468" title="All 4 branches missed.">            if (!pullPaging.isLastPage() &amp;&amp; !issuePaging.isLastPage()) return CollectionMode.FirstTimeAll;</span>
+<span class="nc bnc" id="L469" title="All 4 branches missed.">            if (pullPaging.isLastPage() &amp;&amp; !issuePaging.isLastPage()) return CollectionMode.FirstTimeCommitAndIssue;</span>
+<span class="nc bnc" id="L470" title="All 4 branches missed.">            if (!pullPaging.isLastPage() &amp;&amp; issuePaging.isLastPage()) return CollectionMode.FirstTimeCommitAndPull;</span>
+<span class="nc bnc" id="L471" title="All 4 branches missed.">            if (pullPaging.isLastPage() &amp;&amp; issuePaging.isLastPage()) return CollectionMode.FirstTimeCommitOnly;</span>
+        }
+
+<span class="nc bnc" id="L474" title="All 6 branches missed.">        if (commitPaging.isLastPage() &amp;&amp; pullPaging.isLastPage() &amp;&amp; issuePaging.isLastPage())</span>
+<span class="nc" id="L475">            return CollectionMode.None;</span>
+<span class="nc bnc" id="L476" title="All 6 branches missed.">        if (commitPaging.isLastPage() &amp;&amp; pullPaging.isLastPage() &amp;&amp; !issuePaging.isLastPage())</span>
+<span class="nc" id="L477">            return CollectionMode.IssueOnly;</span>
+<span class="nc bnc" id="L478" title="All 6 branches missed.">        if (commitPaging.isLastPage() &amp;&amp; !pullPaging.isLastPage() &amp;&amp; !issuePaging.isLastPage())</span>
+<span class="nc" id="L479">            return CollectionMode.PullAndIssue;</span>
+<span class="nc bnc" id="L480" title="All 6 branches missed.">        if (!commitPaging.isLastPage() &amp;&amp; pullPaging.isLastPage() &amp;&amp; issuePaging.isLastPage())</span>
+<span class="nc" id="L481">            return CollectionMode.CommitOnly;</span>
+<span class="nc bnc" id="L482" title="All 6 branches missed.">        if (!commitPaging.isLastPage() &amp;&amp; !pullPaging.isLastPage() &amp;&amp; issuePaging.isLastPage())</span>
+<span class="nc" id="L483">            return CollectionMode.CommitAndPull;</span>
+<span class="nc bnc" id="L484" title="All 6 branches missed.">        if (commitPaging.isLastPage() &amp;&amp; !pullPaging.isLastPage() &amp;&amp; issuePaging.isLastPage())</span>
+<span class="nc" id="L485">            return CollectionMode.PullOnly;</span>
+<span class="nc bnc" id="L486" title="All 6 branches missed.">        if (!commitPaging.isLastPage() &amp;&amp; pullPaging.isLastPage() &amp;&amp; !issuePaging.isLastPage())</span>
+<span class="nc" id="L487">            return CollectionMode.CommitAndIssue;</span>
+<span class="nc bnc" id="L488" title="All 6 branches missed.">        if (!commitPaging.isLastPage() &amp;&amp; !pullPaging.isLastPage() &amp;&amp; !issuePaging.isLastPage())</span>
+<span class="nc" id="L489">            return CollectionMode.All;</span>
+<span class="nc" id="L490">        return CollectionMode.None;</span>
+    }
+
+    @SuppressWarnings({&quot;PMD.NPathComplexity&quot;})
+    private GitHubPaging processPullRequest(JSONObject pullObject, GitHubRepo repo, Map&lt;Long, String&gt; prMap, long historyTimeStamp) throws MalformedURLException, HygieiaException {
+<span class="nc" id="L495">        GitHubPaging paging = new GitHubPaging();</span>
+<span class="nc" id="L496">        paging.setLastPage(true);</span>
+<span class="nc bnc" id="L497" title="All 2 branches missed.">        if (pullObject == null) return paging;</span>
+<span class="nc" id="L498">        paging.setTotalCount(asInt(pullObject, &quot;totalCount&quot;));</span>
+<span class="nc" id="L499">        JSONObject pageInfo = (JSONObject) pullObject.get(&quot;pageInfo&quot;);</span>
+<span class="nc" id="L500">        paging.setCursor(str(pageInfo, &quot;endCursor&quot;));</span>
+<span class="nc bnc" id="L501" title="All 2 branches missed.">        paging.setLastPage(!(Boolean) pageInfo.get(&quot;hasNextPage&quot;));</span>
+<span class="nc" id="L502">        JSONArray edges = getArray(pullObject, &quot;edges&quot;);</span>
+<span class="nc bnc" id="L503" title="All 2 branches missed.">        if (CollectionUtils.isEmpty(edges)) {</span>
+<span class="nc" id="L504">            return paging;</span>
+        }
+<span class="nc" id="L506">        int localCount = 0;</span>
+<span class="nc bnc" id="L507" title="All 2 branches missed.">        for (Object o : edges) {</span>
+<span class="nc" id="L508">            JSONObject node = (JSONObject) ((JSONObject) o).get(&quot;node&quot;);</span>
+<span class="nc bnc" id="L509" title="All 2 branches missed.">            if (node == null) break;</span>
+<span class="nc" id="L510">            JSONObject userObject = (JSONObject) node.get(&quot;author&quot;);</span>
+<span class="nc" id="L511">            String merged = str(node, &quot;mergedAt&quot;);</span>
+<span class="nc" id="L512">            String closed = str(node, &quot;closedAt&quot;);</span>
+<span class="nc" id="L513">            String updated = str(node, &quot;updatedAt&quot;);</span>
+<span class="nc" id="L514">            String created = str(node, &quot;createdAt&quot;);</span>
+<span class="nc" id="L515">            long createdTimestamp = getTimeStampMills(created);</span>
+<span class="nc" id="L516">            long mergedTimestamp = getTimeStampMills(merged);</span>
+<span class="nc" id="L517">            long closedTimestamp = getTimeStampMills(closed);</span>
+<span class="nc" id="L518">            long updatedTimestamp = getTimeStampMills(updated);</span>
+<span class="nc" id="L519">            GitHubParsed gitHubParsed = new GitHubParsed(repo.getRepoUrl());</span>
+<span class="nc" id="L520">            GitRequest pull = new GitRequest();</span>
+            //General Info
+<span class="nc" id="L522">            pull.setRequestType(&quot;pull&quot;);</span>
+<span class="nc" id="L523">            pull.setNumber(str(node, &quot;number&quot;));</span>
+<span class="nc" id="L524">            pull.setUserId(str(userObject, &quot;login&quot;));</span>
+<span class="nc" id="L525">            pull.setScmUrl(repo.getRepoUrl());</span>
+<span class="nc" id="L526">            pull.setScmBranch(repo.getBranch());</span>
+<span class="nc" id="L527">            pull.setOrgName(gitHubParsed.getOrgName());</span>
+<span class="nc" id="L528">            pull.setRepoName(gitHubParsed.getRepoName());</span>
+<span class="nc" id="L529">            pull.setScmCommitLog(str(node, &quot;title&quot;));</span>
+<span class="nc" id="L530">            pull.setTimestamp(createdTimestamp);</span>
+<span class="nc" id="L531">            pull.setCreatedAt(createdTimestamp);</span>
+<span class="nc" id="L532">            pull.setClosedAt(closedTimestamp);</span>
+<span class="nc" id="L533">            pull.setUpdatedAt(updatedTimestamp);</span>
+            //Status
+<span class="nc" id="L535">            pull.setState(str(node, &quot;state&quot;).toLowerCase());</span>
+<span class="nc" id="L536">            JSONObject headrefJson = (JSONObject) node.get(&quot;headRef&quot;);</span>
+<span class="nc bnc" id="L537" title="All 2 branches missed.">            if (headrefJson != null) {</span>
+<span class="nc" id="L538">                JSONObject targetJson = (JSONObject) headrefJson.get(&quot;target&quot;);</span>
+<span class="nc" id="L539">                pull.setHeadSha(str(targetJson, &quot;oid&quot;));</span>
+            }
+<span class="nc bnc" id="L541" title="All 2 branches missed.">            if (merged != null) {</span>
+<span class="nc" id="L542">                pull.setScmRevisionNumber(str((JSONObject) node.get(&quot;mergeCommit&quot;), &quot;oid&quot;));</span>
+<span class="nc" id="L543">                pull.setResolutiontime((mergedTimestamp - createdTimestamp) / (24 * 3600000));</span>
+<span class="nc" id="L544">                pull.setScmCommitTimestamp(mergedTimestamp);</span>
+<span class="nc" id="L545">                pull.setMergedAt(mergedTimestamp);</span>
+<span class="nc" id="L546">                List&lt;Commit&gt; prCommits = getPRCommits((JSONObject) node.get(&quot;commits&quot;), pull);</span>
+<span class="nc" id="L547">                pull.setCommits(prCommits);</span>
+<span class="nc" id="L548">                List&lt;Comment&gt; comments = getComments((JSONObject) node.get(&quot;comments&quot;));</span>
+<span class="nc" id="L549">                pull.setComments(comments);</span>
+<span class="nc" id="L550">                List&lt;Review&gt; reviews = getReviews((JSONObject) node.get(&quot;reviews&quot;));</span>
+<span class="nc" id="L551">                pull.setReviews(reviews);</span>
+            }
+            // commit etc details
+<span class="nc" id="L554">            pull.setSourceBranch(str(node, &quot;headRefName&quot;));</span>
+<span class="nc bnc" id="L555" title="All 2 branches missed.">            if (node.get(&quot;headRepository&quot;) != null) {</span>
+<span class="nc" id="L556">                JSONObject headObject = (JSONObject) node.get(&quot;headRepository&quot;);</span>
+<span class="nc" id="L557">                GitHubParsed sourceRepoUrlParsed = new GitHubParsed(str(headObject, &quot;url&quot;));</span>
+<span class="nc bnc" id="L558" title="All 2 branches missed.">                pull.setSourceRepo(!Objects.equals(&quot;&quot;, sourceRepoUrlParsed.getOrgName()) ? sourceRepoUrlParsed.getOrgName() + &quot;/&quot; + sourceRepoUrlParsed.getRepoName() : sourceRepoUrlParsed.getRepoName());</span>
+            }
+<span class="nc bnc" id="L560" title="All 2 branches missed.">            if (node.get(&quot;baseRef&quot;) != null) {</span>
+<span class="nc" id="L561">                pull.setBaseSha(str((JSONObject) ((JSONObject) node.get(&quot;baseRef&quot;)).get(&quot;target&quot;), &quot;oid&quot;));</span>
+            }
+<span class="nc" id="L563">            pull.setTargetBranch(str(node, &quot;baseRefName&quot;));</span>
+            //pull.setTargetRepo(gitHubParsed.getUrl());
+<span class="nc bnc" id="L565" title="All 2 branches missed.">            pull.setTargetRepo(!Objects.equals(&quot;&quot;, gitHubParsed.getOrgName()) ? gitHubParsed.getOrgName() + &quot;/&quot; + gitHubParsed.getRepoName() : gitHubParsed.getRepoName());</span>
+
+<span class="nc bnc" id="L567" title="All 2 branches missed.">            boolean stop = (pull.getUpdatedAt() &lt; historyTimeStamp) ||</span>
+<span class="nc bnc" id="L568" title="All 6 branches missed.">                    ((!MapUtils.isEmpty(prMap) &amp;&amp; prMap.get(pull.getUpdatedAt()) != null) &amp;&amp; (Objects.equals(prMap.get(pull.getUpdatedAt()), pull.getNumber())));</span>
+<span class="nc bnc" id="L569" title="All 2 branches missed.">            if (stop) {</span>
+<span class="nc" id="L570">                paging.setLastPage(true);</span>
+<span class="nc" id="L571">                LOG.debug(&quot;------ Stopping pull request processing. History check is met OR Found matching entry in existing pull requests. Pull Request#&quot; + pull.getNumber());</span>
+<span class="nc" id="L572">                break;</span>
+            } else {
+                //add to the list
+<span class="nc" id="L575">                localCount++;</span>
+<span class="nc" id="L576">                pullRequests.add(pull);</span>
+            }
+<span class="nc" id="L578">        }</span>
+<span class="nc" id="L579">        paging.setCurrentCount(localCount);</span>
+<span class="nc" id="L580">        return paging;</span>
+    }
+
+    private GitHubPaging processCommits(JSONObject refObject, GitHubRepo repo) {
+<span class="nc" id="L584">        GitHubPaging paging = new GitHubPaging();</span>
+<span class="nc" id="L585">        paging.setLastPage(true); //initialize</span>
+
+<span class="nc bnc" id="L587" title="All 2 branches missed.">        if (refObject == null) return paging;</span>
+
+<span class="nc" id="L589">        JSONObject target = (JSONObject) refObject.get(&quot;target&quot;);</span>
+
+<span class="nc bnc" id="L591" title="All 2 branches missed.">        if (target == null) return paging;</span>
+
+<span class="nc" id="L593">        JSONObject history = (JSONObject) target.get(&quot;history&quot;);</span>
+
+<span class="nc" id="L595">        JSONObject pageInfo = (JSONObject) history.get(&quot;pageInfo&quot;);</span>
+
+<span class="nc" id="L597">        paging.setCursor(str(pageInfo, &quot;endCursor&quot;));</span>
+<span class="nc bnc" id="L598" title="All 2 branches missed.">        paging.setLastPage(!(Boolean) pageInfo.get(&quot;hasNextPage&quot;));</span>
+
+<span class="nc" id="L600">        JSONArray edges = (JSONArray) history.get(&quot;edges&quot;);</span>
+
+<span class="nc bnc" id="L602" title="All 2 branches missed.">        if (CollectionUtils.isEmpty(edges)) {</span>
+<span class="nc" id="L603">            return paging;</span>
+        }
+
+<span class="nc" id="L606">        paging.setCurrentCount(edges.size());</span>
+
+<span class="nc bnc" id="L608" title="All 2 branches missed.">        for (Object o : edges) {</span>
+<span class="nc" id="L609">            JSONObject node = (JSONObject) ((JSONObject) o).get(&quot;node&quot;);</span>
+<span class="nc" id="L610">            JSONObject authorJSON = (JSONObject) node.get(&quot;author&quot;);</span>
+<span class="nc" id="L611">            JSONObject authorUserJSON = (JSONObject) authorJSON.get(&quot;user&quot;);</span>
+
+<span class="nc" id="L613">            String sha = str(node, &quot;oid&quot;);</span>
+<span class="nc" id="L614">            String message = str(node, &quot;message&quot;);</span>
+<span class="nc" id="L615">            String authorName = str(authorJSON, &quot;name&quot;);</span>
+<span class="nc bnc" id="L616" title="All 2 branches missed.">            String authorLogin = authorUserJSON == null ? &quot;unknown&quot; : str(authorUserJSON, &quot;login&quot;);</span>
+
+<span class="nc" id="L618">            Commit commit = new Commit();</span>
+<span class="nc" id="L619">            commit.setTimestamp(System.currentTimeMillis());</span>
+<span class="nc" id="L620">            commit.setScmUrl(repo.getRepoUrl());</span>
+<span class="nc" id="L621">            commit.setScmBranch(repo.getBranch());</span>
+<span class="nc" id="L622">            commit.setScmRevisionNumber(sha);</span>
+<span class="nc" id="L623">            commit.setScmAuthor(authorName);</span>
+<span class="nc" id="L624">            commit.setScmAuthorLogin(authorLogin);</span>
+<span class="nc" id="L625">            commit.setScmCommitLog(message);</span>
+<span class="nc" id="L626">            commit.setScmCommitTimestamp(getTimeStampMills(str(authorJSON, &quot;date&quot;)));</span>
+<span class="nc" id="L627">            commit.setNumberOfChanges(1);</span>
+<span class="nc" id="L628">            commit.setType(getCommitType(message)); //initialize all to new.</span>
+<span class="nc" id="L629">            commits.add(commit);</span>
+<span class="nc" id="L630">        }</span>
+<span class="nc" id="L631">        return paging;</span>
+    }
+
+
+    private GitHubPaging processIssues(JSONObject issueObject, GitHubParsed gitHubParsed, Map&lt;Long, String&gt; issuesMap, long historyTimeStamp) {
+<span class="nc" id="L636">        GitHubPaging paging = new GitHubPaging();</span>
+<span class="nc" id="L637">        paging.setLastPage(true);</span>
+
+<span class="nc bnc" id="L639" title="All 2 branches missed.">        if (issueObject == null) return paging;</span>
+
+<span class="nc" id="L641">        paging.setTotalCount(asInt(issueObject, &quot;totalCount&quot;));</span>
+<span class="nc" id="L642">        JSONObject pageInfo = (JSONObject) issueObject.get(&quot;pageInfo&quot;);</span>
+<span class="nc" id="L643">        paging.setCursor(str(pageInfo, &quot;endCursor&quot;));</span>
+<span class="nc bnc" id="L644" title="All 2 branches missed.">        paging.setLastPage(!(Boolean) pageInfo.get(&quot;hasNextPage&quot;));</span>
+<span class="nc" id="L645">        JSONArray edges = getArray(issueObject, &quot;edges&quot;);</span>
+
+<span class="nc bnc" id="L647" title="All 2 branches missed.">        if (CollectionUtils.isEmpty(edges)) {</span>
+<span class="nc" id="L648">            return paging;</span>
+        }
+
+<span class="nc" id="L651">        int localCount = 0;</span>
+<span class="nc bnc" id="L652" title="All 2 branches missed.">        for (Object o : edges) {</span>
+<span class="nc" id="L653">            JSONObject node = (JSONObject) ((JSONObject) o).get(&quot;node&quot;);</span>
+<span class="nc bnc" id="L654" title="All 2 branches missed.">            if (node == null) break;</span>
+
+<span class="nc" id="L656">            String message = str(node, &quot;title&quot;);</span>
+<span class="nc" id="L657">            String number = str(node, &quot;number&quot;);</span>
+
+<span class="nc" id="L659">            JSONObject userObject = (JSONObject) node.get(&quot;author&quot;);</span>
+<span class="nc" id="L660">            String name = str(userObject, &quot;login&quot;);</span>
+<span class="nc" id="L661">            String created = str(node, &quot;createdAt&quot;);</span>
+<span class="nc" id="L662">            String updated = str(node, &quot;updatedAt&quot;);</span>
+<span class="nc" id="L663">            long createdTimestamp = new DateTime(created).getMillis();</span>
+<span class="nc" id="L664">            long updatedTimestamp = new DateTime(updated).getMillis();</span>
+
+<span class="nc" id="L666">            GitRequest issue = new GitRequest();</span>
+<span class="nc" id="L667">            String state = str(node, &quot;state&quot;);</span>
+
+<span class="nc" id="L669">            issue.setClosedAt(0);</span>
+<span class="nc" id="L670">            issue.setResolutiontime(0);</span>
+<span class="nc" id="L671">            issue.setMergedAt(0);</span>
+<span class="nc bnc" id="L672" title="All 2 branches missed.">            if (Objects.equals(&quot;CLOSED&quot;, state)) {</span>
+                //ideally should be checking closedAt field. But it's not yet available in graphQL schema
+<span class="nc" id="L674">                issue.setScmCommitTimestamp(updatedTimestamp);</span>
+<span class="nc" id="L675">                issue.setClosedAt(updatedTimestamp);</span>
+<span class="nc" id="L676">                issue.setMergedAt(updatedTimestamp);</span>
+<span class="nc" id="L677">                issue.setResolutiontime((updatedTimestamp - createdTimestamp) / (24 * 3600000));</span>
+            }
+<span class="nc" id="L679">            issue.setUserId(name);</span>
+<span class="nc" id="L680">            issue.setScmUrl(gitHubParsed.getUrl());</span>
+<span class="nc" id="L681">            issue.setTimestamp(createdTimestamp);</span>
+<span class="nc" id="L682">            issue.setScmRevisionNumber(number);</span>
+<span class="nc" id="L683">            issue.setNumber(number);</span>
+<span class="nc" id="L684">            issue.setScmCommitLog(message);</span>
+<span class="nc" id="L685">            issue.setCreatedAt(createdTimestamp);</span>
+<span class="nc" id="L686">            issue.setUpdatedAt(updatedTimestamp);</span>
+
+<span class="nc" id="L688">            issue.setNumber(number);</span>
+<span class="nc" id="L689">            issue.setRequestType(&quot;issue&quot;);</span>
+<span class="nc bnc" id="L690" title="All 2 branches missed.">            if (Objects.equals(&quot;CLOSED&quot;, state)) {</span>
+<span class="nc" id="L691">                issue.setState(&quot;closed&quot;);</span>
+            } else {
+<span class="nc" id="L693">                issue.setState(&quot;open&quot;);</span>
+            }
+<span class="nc" id="L695">            issue.setOrgName(gitHubParsed.getOrgName());</span>
+<span class="nc" id="L696">            issue.setRepoName(gitHubParsed.getRepoName());</span>
+
+<span class="nc bnc" id="L698" title="All 2 branches missed.">            boolean stop = (issue.getUpdatedAt() &lt; historyTimeStamp) ||</span>
+<span class="nc bnc" id="L699" title="All 6 branches missed.">                    ((!MapUtils.isEmpty(issuesMap) &amp;&amp; issuesMap.get(issue.getUpdatedAt()) != null) &amp;&amp; (Objects.equals(issuesMap.get(issue.getUpdatedAt()), issue.getNumber())));</span>
+<span class="nc bnc" id="L700" title="All 2 branches missed.">            if (stop) {</span>
+<span class="nc" id="L701">                paging.setLastPage(true);</span>
+<span class="nc" id="L702">                LOG.debug(&quot;------ Stopping issue processing. History check is met OR Found matching entry in existing issues. Issue#&quot; + issue.getNumber());</span>
+<span class="nc" id="L703">                break;</span>
+            } else {
+                //add to the list
+<span class="nc" id="L706">                issues.add(issue);</span>
+<span class="nc" id="L707">                localCount++;</span>
+            }
+<span class="nc" id="L709">        }</span>
+<span class="nc" id="L710">        paging.setCurrentCount(localCount);</span>
+<span class="nc" id="L711">        return paging;</span>
+    }
+
+    private List&lt;Comment&gt; getComments(JSONObject commentsJSON) throws RestClientException {
+
+<span class="nc" id="L716">        List&lt;Comment&gt; comments = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L717" title="All 2 branches missed.">        if (commentsJSON == null) {</span>
+<span class="nc" id="L718">            return comments;</span>
+        }
+<span class="nc" id="L720">        JSONArray nodes = getArray(commentsJSON, &quot;nodes&quot;);</span>
+<span class="nc bnc" id="L721" title="All 2 branches missed.">        if (CollectionUtils.isEmpty(nodes)) {</span>
+<span class="nc" id="L722">            return comments;</span>
+        }
+<span class="nc bnc" id="L724" title="All 2 branches missed.">        for (Object n : nodes) {</span>
+<span class="nc" id="L725">            JSONObject node = (JSONObject) n;</span>
+<span class="nc" id="L726">            Comment comment = new Comment();</span>
+<span class="nc" id="L727">            comment.setBody(str(node, &quot;bodyText&quot;));</span>
+<span class="nc" id="L728">            comment.setUser(str((JSONObject) node.get(&quot;author&quot;), &quot;login&quot;));</span>
+<span class="nc" id="L729">            comment.setCreatedAt(getTimeStampMills(str(node, &quot;createdAt&quot;)));</span>
+<span class="nc" id="L730">            comment.setUpdatedAt(getTimeStampMills(str(node, &quot;updatedAt&quot;)));</span>
+<span class="nc" id="L731">            comment.setStatus(str(node, &quot;state&quot;));</span>
+<span class="nc" id="L732">            comments.add(comment);</span>
+<span class="nc" id="L733">        }</span>
+<span class="nc" id="L734">        return comments;</span>
+    }
+
+
+    private List&lt;Commit&gt; getPRCommits(JSONObject commits, GitRequest pull) {
+<span class="nc" id="L739">        List&lt;Commit&gt; prCommits = new ArrayList&lt;&gt;();</span>
+
+<span class="nc bnc" id="L741" title="All 2 branches missed.">        if (commits == null) {</span>
+<span class="nc" id="L742">            return prCommits;</span>
+        }
+
+<span class="nc" id="L745">        JSONArray nodes = (JSONArray) commits.get(&quot;nodes&quot;);</span>
+<span class="nc bnc" id="L746" title="All 2 branches missed.">        if (CollectionUtils.isEmpty(nodes)) {</span>
+<span class="nc" id="L747">            return prCommits;</span>
+        }
+
+<span class="nc bnc" id="L750" title="All 2 branches missed.">        for (Object n : nodes) {</span>
+<span class="nc" id="L751">            JSONObject c = (JSONObject) n;</span>
+<span class="nc" id="L752">            JSONObject commit = (JSONObject) c.get(&quot;commit&quot;);</span>
+<span class="nc" id="L753">            Commit newCommit = new Commit();</span>
+<span class="nc" id="L754">            newCommit.setScmRevisionNumber(str(commit, &quot;oid&quot;));</span>
+<span class="nc" id="L755">            newCommit.setScmCommitLog(str(commit, &quot;message&quot;));</span>
+<span class="nc" id="L756">            JSONObject author = (JSONObject) commit.get(&quot;author&quot;);</span>
+<span class="nc" id="L757">            newCommit.setScmAuthor(str(author, &quot;name&quot;));</span>
+<span class="nc" id="L758">            newCommit.setScmCommitTimestamp(getTimeStampMills(str(author, &quot;date&quot;)));</span>
+
+<span class="nc bnc" id="L760" title="All 2 branches missed.">            if (Objects.equals(newCommit.getScmRevisionNumber(), pull.getHeadSha())) {</span>
+<span class="nc" id="L761">                JSONObject statusObj = (JSONObject) commit.get(&quot;status&quot;);</span>
+<span class="nc bnc" id="L762" title="All 2 branches missed.">                if (statusObj != null) {</span>
+<span class="nc" id="L763">                    List&lt;CommitStatus&gt; commitStatuses = getCommitStatuses(statusObj);</span>
+<span class="nc" id="L764">                    pull.setCommitStatuses(commitStatuses);</span>
+                }
+            }
+
+<span class="nc" id="L768">            prCommits.add(newCommit);</span>
+<span class="nc" id="L769">        }</span>
+<span class="nc" id="L770">        return prCommits;</span>
+    }
+
+    private List&lt;CommitStatus&gt; getCommitStatuses(JSONObject statusObject) throws RestClientException {
+
+<span class="nc" id="L775">        Map&lt;String, CommitStatus&gt; statuses = new HashMap&lt;&gt;();</span>
+
+<span class="nc bnc" id="L777" title="All 2 branches missed.">        if (statusObject == null) {</span>
+<span class="nc" id="L778">            return new ArrayList&lt;&gt;();</span>
+        }
+
+<span class="nc" id="L781">        JSONArray contexts = (JSONArray) statusObject.get(&quot;contexts&quot;);</span>
+
+<span class="nc bnc" id="L783" title="All 2 branches missed.">        if (CollectionUtils.isEmpty(contexts)) {</span>
+<span class="nc" id="L784">            return new ArrayList&lt;&gt;();</span>
+        }
+<span class="nc bnc" id="L786" title="All 2 branches missed.">        for (Object ctx : contexts) {</span>
+<span class="nc" id="L787">            String ctxStr = str((JSONObject) ctx, &quot;context&quot;);</span>
+<span class="nc bnc" id="L788" title="All 4 branches missed.">            if ((ctxStr != null) &amp;&amp; !statuses.containsKey(ctxStr)) {</span>
+<span class="nc" id="L789">                CommitStatus status = new CommitStatus();</span>
+<span class="nc" id="L790">                status.setContext(ctxStr);</span>
+<span class="nc" id="L791">                status.setDescription(str((JSONObject) ctx, &quot;description&quot;));</span>
+<span class="nc" id="L792">                status.setState(str((JSONObject) ctx, &quot;state&quot;));</span>
+<span class="nc" id="L793">                statuses.put(ctxStr, status);</span>
+            }
+<span class="nc" id="L795">        }</span>
+<span class="nc" id="L796">        return new ArrayList&lt;&gt;(statuses.values());</span>
+    }
+
+    private List&lt;Review&gt; getReviews(JSONObject reviewObject) throws RestClientException {
+
+<span class="nc" id="L801">        List&lt;Review&gt; reviews = new ArrayList&lt;&gt;();</span>
+
+<span class="nc bnc" id="L803" title="All 2 branches missed.">        if (reviewObject == null) {</span>
+<span class="nc" id="L804">            return reviews;</span>
+        }
+
+<span class="nc" id="L807">        JSONArray nodes = (JSONArray) reviewObject.get(&quot;nodes&quot;);</span>
+
+<span class="nc bnc" id="L809" title="All 2 branches missed.">        if (CollectionUtils.isEmpty(nodes)) {</span>
+<span class="nc" id="L810">            return reviews;</span>
+        }
+
+<span class="nc bnc" id="L813" title="All 2 branches missed.">        for (Object n : nodes) {</span>
+<span class="nc" id="L814">            JSONObject node = (JSONObject) n;</span>
+<span class="nc" id="L815">            Review review = new Review();</span>
+<span class="nc" id="L816">            review.setState(str(node, &quot;state&quot;));</span>
+<span class="nc" id="L817">            review.setBody(str(node, &quot;bodyText&quot;));</span>
+<span class="nc" id="L818">            JSONObject authorObj = (JSONObject) node.get(&quot;author&quot;);</span>
+<span class="nc" id="L819">            review.setAuthor(str(authorObj, &quot;login&quot;));</span>
+<span class="nc" id="L820">            review.setCreatedAt(getTimeStampMills(str(node, &quot;createdAt&quot;)));</span>
+<span class="nc" id="L821">            review.setUpdatedAt(getTimeStampMills(str(node, &quot;updatedAt&quot;)));</span>
+<span class="nc" id="L822">            reviews.add(review);</span>
+<span class="nc" id="L823">        }</span>
+<span class="nc" id="L824">        return reviews;</span>
+    }
+
+    private CommitType getCommitType(String commitMessage) {
+<span class="nc bnc" id="L828" title="All 2 branches missed.">        if (settings.getNotBuiltCommits() == null) return CommitType.New;</span>
+<span class="nc bnc" id="L829" title="All 2 branches missed.">        if (!CollectionUtils.isEmpty(commitExclusionPatterns)) {</span>
+<span class="nc bnc" id="L830" title="All 2 branches missed.">            for (Pattern pattern : commitExclusionPatterns) {</span>
+<span class="nc bnc" id="L831" title="All 2 branches missed.">                if (pattern.matcher(commitMessage).matches()) {</span>
+<span class="nc" id="L832">                    return CommitType.NotBuilt;</span>
+                }
+<span class="nc" id="L834">            }</span>
+        }
+<span class="nc" id="L836">        return CommitType.New;</span>
+    }
+
+
+    @Override
+    public GitHubRateLimit getRateLimit(GitHubRepo repo) throws MalformedURLException, HygieiaException {
+<span class="nc" id="L842">        GitHubParsed gitHubParsed = new GitHubParsed(repo.getRepoUrl());</span>
+<span class="nc" id="L843">        String decryptedPassword = decryptString(repo.getPassword(), settings.getKey());</span>
+<span class="nc" id="L844">        JSONObject query = new JSONObject();</span>
+<span class="nc" id="L845">        query.put(&quot;query&quot;, GitHubGraphQLQuery.QUERY_RATE_LIMIT);</span>
+
+<span class="nc" id="L847">        ResponseEntity&lt;String&gt; response = null;</span>
+<span class="nc bnc" id="L848" title="All 2 branches missed.">        if (StringUtils.isEmpty(settings.getPersonalAccessToken())) {</span>
+<span class="nc" id="L849">            response = makeRestCallPost(gitHubParsed.getGraphQLUrl(), repo.getUserId(), decryptedPassword, query);</span>
+        } else {
+<span class="nc" id="L851">            response = makeRestCallPost(gitHubParsed.getGraphQLUrl(), &quot;&quot;, &quot;&quot;, query);</span>
+        }
+
+<span class="nc" id="L854">        JSONObject data = (JSONObject) parseAsObject(response).get(&quot;data&quot;);</span>
+
+<span class="nc" id="L856">        JSONArray errors = getArray(parseAsObject(response), &quot;errors&quot;);</span>
+
+<span class="nc bnc" id="L858" title="All 2 branches missed.">        if (data == null) return null;</span>
+
+<span class="nc bnc" id="L860" title="All 2 branches missed.">        if (!CollectionUtils.isEmpty(errors)) {</span>
+<span class="nc" id="L861">            throw new HygieiaException(&quot;Error in GraphQL query:&quot; + errors.toJSONString(), HygieiaException.BAD_DATA);</span>
+        }
+
+<span class="nc" id="L864">        JSONObject rateLimitJSON = (JSONObject) data.get(&quot;rateLimit&quot;);</span>
+
+<span class="nc bnc" id="L866" title="All 2 branches missed.">        if (rateLimitJSON == null) return null;</span>
+<span class="nc" id="L867">        int limit = asInt(rateLimitJSON, &quot;limit&quot;);</span>
+<span class="nc" id="L868">        int remaining = asInt(rateLimitJSON, &quot;remaining&quot;);</span>
+<span class="nc" id="L869">        long rateLimitResetAt = getTimeStampMills(str(rateLimitJSON, &quot;resetAt&quot;));</span>
+
+<span class="nc" id="L871">        GitHubRateLimit rateLimit = new GitHubRateLimit();</span>
+<span class="nc" id="L872">        rateLimit.setLimit(limit);</span>
+<span class="nc" id="L873">        rateLimit.setRemaining(remaining);</span>
+<span class="nc" id="L874">        rateLimit.setResetTime(rateLimitResetAt);</span>
+
+<span class="nc" id="L876">        return rateLimit;</span>
+    }
+
+
+    /// Utility Methods
+
+    private int asInt(JSONObject json, String key) {
+<span class="nc" id="L883">        String val = str(json, key);</span>
+        try {
+<span class="nc bnc" id="L885" title="All 2 branches missed.">            if (val != null) {</span>
+<span class="nc" id="L886">                return Integer.parseInt(val);</span>
+            }
+<span class="nc" id="L888">        } catch (NumberFormatException ex) {</span>
+<span class="nc" id="L889">            LOG.error(&quot;Invalid number format: &quot; + ex.getMessage());</span>
+<span class="nc" id="L890">        }</span>
+<span class="nc" id="L891">        return 0;</span>
+    }
+
+    private long getTimeStampMills(String dateTime) {
+<span class="nc bnc" id="L895" title="All 2 branches missed.">        return StringUtils.isEmpty(dateTime) ? 0 : new DateTime(dateTime).getMillis();</span>
+    }
+
+
+    /**
+     * Get run date based off of firstRun boolean
+     *
+     * @param repo
+     * @param firstRun
+     * @return
+     */
+    private String getRunDate(GitHubRepo repo, boolean firstRun) {
+<span class="nc bnc" id="L907" title="All 2 branches missed.">        if (firstRun) {</span>
+<span class="nc" id="L908">            int firstRunDaysHistory = settings.getFirstRunHistoryDays();</span>
+<span class="nc bnc" id="L909" title="All 2 branches missed.">            if (firstRunDaysHistory &gt; 0) {</span>
+<span class="nc" id="L910">                return getDate(new DateTime(), firstRunDaysHistory, 0).toString();</span>
+            } else {
+<span class="nc" id="L912">                return getDate(new DateTime(), FIRST_RUN_HISTORY_DEFAULT, 0).toString();</span>
+            }
+        } else {
+<span class="nc" id="L915">            return getDate(new DateTime(repo.getLastUpdated()), 0, 10).toString();</span>
+        }
+    }
+
+    /**
+     * Date utility
+     *
+     * @param dateInstance
+     * @param offsetDays
+     * @param offsetMinutes
+     * @return
+     */
+    private static DateTime getDate(DateTime dateInstance, int offsetDays, int offsetMinutes) {
+<span class="nc" id="L928">        return dateInstance.minusDays(offsetDays).minusMinutes(offsetMinutes);</span>
+    }
+
+
+    private ResponseEntity&lt;String&gt; makeRestCallPost(String url, String userId,
+                                                    String password, JSONObject query) {
+
+        // Basic Auth only.
+<span class="nc bnc" id="L936" title="All 4 branches missed.">        if (!Objects.equals(&quot;&quot;, userId) &amp;&amp; !Objects.equals(&quot;&quot;, password)) {</span>
+<span class="nc" id="L937">            return restOperations.exchange(url, HttpMethod.POST,</span>
+<span class="nc" id="L938">                    new HttpEntity&lt;Object&gt;(query, createHeaders(userId, password)),</span>
+                    String.class);
+
+<span class="nc bnc" id="L941" title="All 4 branches missed.">        } else if (settings.getPersonalAccessToken() != null &amp;&amp; !Objects.equals(&quot;&quot;, settings.getPersonalAccessToken())) {</span>
+<span class="nc" id="L942">            return restOperations.exchange(url, HttpMethod.POST,</span>
+<span class="nc" id="L943">                    new HttpEntity&lt;Object&gt;(query, createHeaders(settings.getPersonalAccessToken())),</span>
+                    String.class);
+        } else {
+<span class="nc" id="L946">            return restOperations.exchange(url, HttpMethod.POST, new HttpEntity&lt;Object&gt;(query, null),</span>
+                    String.class);
+        }
+
+    }
+
+    private ResponseEntity&lt;String&gt; makeRestCallGet(String url, String userId,
+                                                   String password) {
+        // Basic Auth only.
+<span class="nc bnc" id="L955" title="All 4 branches missed.">        if (!Objects.equals(&quot;&quot;, userId) &amp;&amp; !Objects.equals(&quot;&quot;, password)) {</span>
+<span class="nc" id="L956">            return restOperations.exchange(url, HttpMethod.GET,</span>
+<span class="nc" id="L957">                    new HttpEntity&lt;&gt;(createHeaders(userId, password)),</span>
+                    String.class);
+
+<span class="nc bnc" id="L960" title="All 4 branches missed.">        } else if (settings.getPersonalAccessToken() != null &amp;&amp; !Objects.equals(&quot;&quot;, settings.getPersonalAccessToken())) {</span>
+<span class="nc" id="L961">            return restOperations.exchange(url, HttpMethod.GET,</span>
+<span class="nc" id="L962">                    new HttpEntity&lt;&gt;(createHeaders(settings.getPersonalAccessToken())),</span>
+                    String.class);
+        } else {
+<span class="nc" id="L965">            return restOperations.exchange(url, HttpMethod.GET, null,</span>
+                    String.class);
+        }
+
+    }
+
+    private HttpHeaders createHeaders(final String userId, final String password) {
+<span class="nc" id="L972">        String auth = userId + &quot;:&quot; + password;</span>
+<span class="nc" id="L973">        byte[] encodedAuth = Base64.encodeBase64(auth.getBytes(StandardCharsets.US_ASCII));</span>
+<span class="nc" id="L974">        String authHeader = &quot;Basic &quot; + new String(encodedAuth);</span>
+
+<span class="nc" id="L976">        HttpHeaders headers = new HttpHeaders();</span>
+<span class="nc" id="L977">        headers.set(&quot;Authorization&quot;, authHeader);</span>
+
+<span class="nc" id="L979">        return headers;</span>
+    }
+
+    private HttpHeaders createHeaders(final String token) {
+<span class="nc" id="L983">        String authHeader = &quot;token &quot; + token;</span>
+
+<span class="nc" id="L985">        HttpHeaders headers = new HttpHeaders();</span>
+<span class="nc" id="L986">        headers.set(&quot;Authorization&quot;, authHeader);</span>
+<span class="nc" id="L987">        return headers;</span>
+    }
+
+
+    private JSONArray parseAsArray(ResponseEntity&lt;String&gt; response) {
+        try {
+<span class="nc" id="L993">            return (JSONArray) new JSONParser().parse(response.getBody());</span>
+<span class="nc" id="L994">        } catch (ParseException pe) {</span>
+<span class="nc" id="L995">            LOG.error(pe.getMessage());</span>
+        }
+<span class="nc" id="L997">        return new JSONArray();</span>
+    }
+
+    private JSONObject parseAsObject(ResponseEntity&lt;String&gt; response) {
+        try {
+<span class="nc" id="L1002">            return (JSONObject) new JSONParser().parse(response.getBody());</span>
+<span class="nc" id="L1003">        } catch (ParseException pe) {</span>
+<span class="nc" id="L1004">            LOG.error(pe.getMessage());</span>
+        }
+<span class="nc" id="L1006">        return new JSONObject();</span>
+    }
+
+    private String str(JSONObject json, String key) {
+<span class="nc bnc" id="L1010" title="All 2 branches missed.">        if (json == null) return &quot;&quot;;</span>
+<span class="nc" id="L1011">        Object value = json.get(key);</span>
+<span class="nc bnc" id="L1012" title="All 2 branches missed.">        return (value == null) ? &quot;&quot; : value.toString();</span>
+    }
+
+    private JSONArray getArray(JSONObject json, String key) {
+<span class="nc bnc" id="L1016" title="All 2 branches missed.">        if (json == null) return new JSONArray();</span>
+<span class="nc bnc" id="L1017" title="All 2 branches missed.">        if (json.get(key) == null) return new JSONArray();</span>
+<span class="nc" id="L1018">        return (JSONArray) json.get(key);</span>
+    }
+
+    /**
+     * Decrypt string
+     *
+     * @param string
+     * @param key
+     * @return String
+     */
+    private static String decryptString(String string, String key) {
+<span class="nc bnc" id="L1029" title="All 2 branches missed.">        if (!StringUtils.isEmpty(string)) {</span>
+            try {
+<span class="nc" id="L1031">                return Encryption.decryptString(</span>
+                        string, key);
+<span class="nc" id="L1033">            } catch (EncryptionException e) {</span>
+<span class="nc" id="L1034">                LOG.error(e.getMessage());</span>
+            }
+        }
+<span class="nc" id="L1037">        return &quot;&quot;;</span>
+    }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.6.201602180812</span></div></body></html>

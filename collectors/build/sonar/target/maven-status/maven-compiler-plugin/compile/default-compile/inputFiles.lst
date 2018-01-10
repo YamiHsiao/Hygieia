@@ -1,0 +1,13 @@
+C:\Users\Yami\Downloads\Hygieia-master\Hygieia-master\collectors\build\sonar\src\main\java\com\capitalone\dashboard\model\SonarCollector.java
+C:\Users\Yami\Downloads\Hygieia-master\Hygieia-master\collectors\build\sonar\src\main\java\com\capitalone\dashboard\repository\SonarCollectorRepository.java
+C:\Users\Yami\Downloads\Hygieia-master\Hygieia-master\collectors\build\sonar\src\main\java\com\capitalone\dashboard\collector\SonarCollectorTask.java
+C:\Users\Yami\Downloads\Hygieia-master\Hygieia-master\collectors\build\sonar\src\main\java\com\capitalone\dashboard\collector\SonarClient.java
+C:\Users\Yami\Downloads\Hygieia-master\Hygieia-master\collectors\build\sonar\src\main\java\com\capitalone\dashboard\collector\RestOperationsSupplier.java
+C:\Users\Yami\Downloads\Hygieia-master\Hygieia-master\collectors\build\sonar\src\main\java\com\capitalone\dashboard\model\SonarProject.java
+C:\Users\Yami\Downloads\Hygieia-master\Hygieia-master\collectors\build\sonar\src\main\java\com\capitalone\dashboard\collector\DefaultSonar6Client.java
+C:\Users\Yami\Downloads\Hygieia-master\Hygieia-master\collectors\build\sonar\src\main\java\com\capitalone\dashboard\collector\SonarSettings.java
+C:\Users\Yami\Downloads\Hygieia-master\Hygieia-master\collectors\build\sonar\src\main\java\com\capitalone\dashboard\repository\SonarProjectRepository.java
+C:\Users\Yami\Downloads\Hygieia-master\Hygieia-master\collectors\build\sonar\src\main\java\com\capitalone\dashboard\Application.java
+C:\Users\Yami\Downloads\Hygieia-master\Hygieia-master\collectors\build\sonar\src\main\java\com\capitalone\dashboard\collector\DefaultSonarClient.java
+C:\Users\Yami\Downloads\Hygieia-master\Hygieia-master\collectors\build\sonar\src\main\java\com\capitalone\dashboard\collector\SonarClientSelector.java
+C:\Users\Yami\Downloads\Hygieia-master\Hygieia-master\collectors\build\sonar\src\main\java\com\capitalone\dashboard\util\SonarDashboardUrl.java

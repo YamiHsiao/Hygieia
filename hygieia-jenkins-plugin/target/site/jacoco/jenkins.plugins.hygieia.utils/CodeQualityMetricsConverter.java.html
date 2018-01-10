@@ -1,0 +1,304 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="zh"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>CodeQualityMetricsConverter.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Hygieia Publisher Plugin</a> &gt; <a href="index.source.html" class="el_package">jenkins.plugins.hygieia.utils</a> &gt; <span class="el_source">CodeQualityMetricsConverter.java</span></div><h1>CodeQualityMetricsConverter.java</h1><pre class="source lang-java linenums">package jenkins.plugins.hygieia.utils;
+
+import com.capitalone.dashboard.model.CodeQuality;
+import com.capitalone.dashboard.model.CodeQualityMetric;
+import com.capitalone.dashboard.model.CodeQualityMetricStatus;
+import com.capitalone.dashboard.model.CodeQualityType;
+import com.capitalone.dashboard.model.quality.*;
+import org.apache.commons.lang3.tuple.Pair;
+import org.springframework.stereotype.Component;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
+@Component
+<span class="fc" id="L18">public class CodeQualityMetricsConverter implements CodeQualityVisitor {</span>
+
+    private static final String TOTAL_NO_OF_TESTS = &quot;tests&quot;;
+    private static final String TEST_FAILURES = &quot;test_failures&quot;;
+    private static final String TEST_ERRORS = &quot;test_errors&quot;;
+    private static final String TEST_SUCCESS_DENSITY = &quot;test_success_density&quot;;
+
+    private static final String BLOCKER_VIOLATIONS = &quot;blocker_violations&quot;;
+    private static final String CRITICAL_VIOLATIONS = &quot;critical_violations&quot;;
+    private static final String MAJOR_VIOLCATIONS = &quot;major_violations&quot;;
+    private static final String VIOLATIONS = &quot;violations&quot;;
+
+    private static final String COVERAGE = &quot;coverage&quot;;
+    private static final String LINE_COVERAGE = &quot;line_coverage&quot;;
+    private static final String TOTAL_LINES_COVERED = &quot;total_lines_covered&quot;;
+    private static final String TOTAL_LINES_MISSED = &quot;total_lines_missed&quot;;
+    private static final String TOTAL_INSTRUCTIONS_COVERED = &quot;total_instructions_covered&quot;;
+    private static final String TOTAL_INSTRUCTIONS_MISSED = &quot;total_instructions_missed&quot;;
+
+<span class="fc" id="L37">    private final CodeQuality quality = new CodeQuality();</span>
+
+    // note for static analysis names are ,,,violations
+    // function tests..
+
+    @Override
+    public void visit(JunitXmlReport report) {
+
+<span class="fc" id="L45">        int testsPassed = report.getTests() - report.getFailures() - report.getErrors();</span>
+
+<span class="fc" id="L47">        Map&lt;String, Pair&lt;Integer, CodeQualityMetricStatus&gt;&gt; metricsMap = new HashMap&lt;&gt;();</span>
+<span class="fc" id="L48">        metricsMap.put(TOTAL_NO_OF_TESTS, Pair.of(report.getTests(), CodeQualityMetricStatus.Ok));</span>
+<span class="fc bfc" id="L49" title="All 2 branches covered.">        metricsMap.put(TEST_FAILURES, Pair.of(report.getFailures(), report.getFailures() &gt; 0 ? CodeQualityMetricStatus.Warning : CodeQualityMetricStatus.Ok));</span>
+<span class="fc bfc" id="L50" title="All 2 branches covered.">        metricsMap.put(TEST_ERRORS, Pair.of(report.getErrors(), report.getErrors() &gt; 0 ? CodeQualityMetricStatus.Alert : CodeQualityMetricStatus.Ok));</span>
+<span class="fc" id="L51">        metricsMap.put(TEST_SUCCESS_DENSITY, Pair.of(testsPassed, CodeQualityMetricStatus.Ok));</span>
+
+<span class="fc bfc" id="L53" title="All 2 branches covered.">        if (null != report.getTimestamp()) {</span>
+<span class="fc" id="L54">            long timestamp = Math.max(quality.getTimestamp(), report.getTimestamp().toGregorianCalendar().getTimeInMillis());</span>
+<span class="fc" id="L55">            quality.setTimestamp(timestamp);</span>
+        }
+<span class="fc" id="L57">        quality.setType(CodeQualityType.StaticAnalysis);</span>
+
+        // finally produce the result
+<span class="fc" id="L60">        this.sumMetrics(metricsMap);</span>
+
+<span class="fc" id="L62">    }</span>
+
+    @Override
+    public void visit(FindBugsXmlReport findBugReport) {
+<span class="fc" id="L66">        Map&lt;String, Pair&lt;Integer, CodeQualityMetricStatus&gt;&gt; metricsMap = new HashMap&lt;&gt;();</span>
+<span class="fc" id="L67">        metricsMap.put(BLOCKER_VIOLATIONS, Pair.of(0, CodeQualityMetricStatus.Ok));</span>
+<span class="fc" id="L68">        metricsMap.put(CRITICAL_VIOLATIONS, Pair.of(0, CodeQualityMetricStatus.Ok));</span>
+<span class="fc" id="L69">        metricsMap.put(MAJOR_VIOLCATIONS, Pair.of(0, CodeQualityMetricStatus.Ok));</span>
+<span class="fc" id="L70">        metricsMap.put(VIOLATIONS, Pair.of(0, CodeQualityMetricStatus.Ok));</span>
+
+        // loop over all the stuff in the report and accumulate violations.
+<span class="fc bfc" id="L73" title="All 2 branches covered.">        if (null != findBugReport.getFiles()) {</span>
+<span class="fc bfc" id="L74" title="All 2 branches covered.">            for (FindBugsXmlReport.BugFile bugFile : findBugReport.getFiles()) {</span>
+<span class="fc bfc" id="L75" title="All 2 branches covered.">                for (FindBugsXmlReport.BugInstance bugInstance : bugFile.getBugCollection()) {</span>
+<span class="pc bpc" id="L76" title="1 of 5 branches missed.">                    switch (bugInstance.getPriority()) {</span>
+                        case Blocker: {
+<span class="fc" id="L78">                            final Pair&lt;Integer, CodeQualityMetricStatus&gt; metricStatusPair = metricsMap.get(BLOCKER_VIOLATIONS);</span>
+<span class="fc" id="L79">                            final Pair newPair = Pair.of(metricStatusPair.getLeft().intValue() + 1, CodeQualityMetricStatus.Alert);</span>
+<span class="fc" id="L80">                            metricsMap.put(BLOCKER_VIOLATIONS, newPair);</span>
+<span class="fc" id="L81">                            break;</span>
+                        }
+                        case Critical: {
+<span class="fc" id="L84">                            final Pair&lt;Integer, CodeQualityMetricStatus&gt; metricStatusPair = metricsMap.get(CRITICAL_VIOLATIONS);</span>
+<span class="fc" id="L85">                            final Pair newPair = Pair.of(metricStatusPair.getLeft().intValue() + 1, CodeQualityMetricStatus.Alert);</span>
+<span class="fc" id="L86">                            metricsMap.put(CRITICAL_VIOLATIONS, newPair);</span>
+<span class="fc" id="L87">                            break;</span>
+                        }
+                        case Normal: {
+<span class="fc" id="L90">                            final Pair&lt;Integer, CodeQualityMetricStatus&gt; metricStatusPair = metricsMap.get(MAJOR_VIOLCATIONS);</span>
+<span class="fc" id="L91">                            final Pair newPair = Pair.of(metricStatusPair.getLeft().intValue() + 1, CodeQualityMetricStatus.Warning);</span>
+<span class="fc" id="L92">                            metricsMap.put(MAJOR_VIOLCATIONS, newPair);</span>
+<span class="fc" id="L93">                            break;</span>
+                        }
+                        case Low: {
+<span class="fc" id="L96">                            final Pair&lt;Integer, CodeQualityMetricStatus&gt; metricStatusPair = metricsMap.get(VIOLATIONS);</span>
+<span class="fc" id="L97">                            final Pair newPair = Pair.of(metricStatusPair.getLeft().intValue() + 1, CodeQualityMetricStatus.Warning);</span>
+<span class="fc" id="L98">                            metricsMap.put(VIOLATIONS, newPair);</span>
+<span class="fc" id="L99">                            break;</span>
+                        }
+                        default:
+                            // not recognised. ignore
+                            break;
+                    }
+<span class="fc" id="L105">                }</span>
+<span class="fc" id="L106">            }</span>
+        }
+
+
+        // finally produce the result
+<span class="fc" id="L111">        this.sumMetrics(metricsMap);</span>
+<span class="fc" id="L112">    }</span>
+
+    public void sumMetrics(Map&lt;String, Pair&lt;Integer, CodeQualityMetricStatus&gt;&gt; metricsMap) {
+<span class="fc" id="L115">        Set&lt;CodeQualityMetric&gt; existingMetrics = quality.getMetrics();</span>
+
+<span class="fc" id="L117">        final Map&lt;String, CodeQualityMetric&gt; mapOfExistingMetrics = new HashMap&lt;String, CodeQualityMetric&gt;();</span>
+<span class="fc bfc" id="L118" title="All 2 branches covered.">        for (CodeQualityMetric metric : existingMetrics) {</span>
+<span class="fc" id="L119">            mapOfExistingMetrics.put(metric.getName(), metric);</span>
+<span class="fc" id="L120">        }</span>
+
+<span class="fc bfc" id="L122" title="All 2 branches covered.">        for (Map.Entry&lt;String, Pair&lt;Integer, CodeQualityMetricStatus&gt;&gt; entry : metricsMap.entrySet()) {</span>
+<span class="fc" id="L123">            String key = entry.getKey();</span>
+<span class="fc" id="L124">            Pair&lt;Integer, CodeQualityMetricStatus&gt; value = entry.getValue();</span>
+<span class="fc" id="L125">            CodeQualityMetric currentValue = mapOfExistingMetrics.get(key);</span>
+<span class="fc" id="L126">            CodeQualityMetric newValue = null;</span>
+<span class="fc bfc" id="L127" title="All 2 branches covered.">            if (null == currentValue) {</span>
+<span class="fc" id="L128">                CodeQualityMetric codeQualityMetric = new CodeQualityMetric();</span>
+<span class="fc" id="L129">                codeQualityMetric.setName(key);</span>
+<span class="fc" id="L130">                codeQualityMetric.setFormattedValue(String.valueOf(value.getLeft()));</span>
+<span class="fc" id="L131">                codeQualityMetric.setValue(value.getLeft());</span>
+<span class="fc" id="L132">                codeQualityMetric.setStatus(value.getRight());</span>
+<span class="fc" id="L133">                newValue = codeQualityMetric;</span>
+<span class="fc" id="L134">            } else {</span>
+                // do the sum
+<span class="fc" id="L136">                quality.getMetrics().remove(currentValue);</span>
+<span class="fc" id="L137">                newValue = new CodeQualityMetric(key);</span>
+<span class="fc" id="L138">                newValue.setValue((int) currentValue.getValue() + value.getLeft());</span>
+<span class="fc" id="L139">                newValue.setFormattedValue(String.valueOf((int) currentValue.getValue() + value.getLeft()));</span>
+<span class="fc" id="L140">                int newOrdinal = Math.max(value.getRight().ordinal(), currentValue.getStatus().ordinal());</span>
+<span class="fc" id="L141">                newValue.setStatus(CodeQualityMetricStatus.values()[newOrdinal]);</span>
+            }
+<span class="fc" id="L143">            quality.addMetric(newValue);</span>
+<span class="fc" id="L144">        }</span>
+        ;
+<span class="fc" id="L146">    }</span>
+
+    @Override
+    public void visit(JacocoXmlReport jacocoXmlReport) {
+<span class="fc" id="L150">        Map&lt;String, Pair&lt;Integer, CodeQualityMetricStatus&gt;&gt; metricsMap = new HashMap&lt;&gt;();</span>
+<span class="fc" id="L151">        metricsMap.put(TOTAL_LINES_COVERED, Pair.of(0, CodeQualityMetricStatus.Ok));</span>
+<span class="fc" id="L152">        metricsMap.put(TOTAL_LINES_MISSED, Pair.of(0, CodeQualityMetricStatus.Ok));</span>
+<span class="fc" id="L153">        metricsMap.put(TOTAL_INSTRUCTIONS_COVERED, Pair.of(0, CodeQualityMetricStatus.Ok));</span>
+<span class="fc" id="L154">        metricsMap.put(TOTAL_INSTRUCTIONS_MISSED, Pair.of(0, CodeQualityMetricStatus.Ok));</span>
+
+<span class="fc bfc" id="L156" title="All 2 branches covered.">        if (null!=jacocoXmlReport.getCounters()) {</span>
+<span class="fc bfc" id="L157" title="All 2 branches covered.">            for (JacocoXmlReport.Counter counter : jacocoXmlReport.getCounters()) {</span>
+<span class="pc bfc" id="L158" title="All 3 branches covered.">                switch (counter.getType()) {</span>
+                    case LINE:
+<span class="fc" id="L160">                        metricsMap.put(TOTAL_LINES_COVERED, Pair.of(counter.getCovered(), CodeQualityMetricStatus.Ok));</span>
+<span class="fc" id="L161">                        metricsMap.put(TOTAL_LINES_MISSED, Pair.of(counter.getMissed(), CodeQualityMetricStatus.Ok));</span>
+<span class="fc" id="L162">                        break;</span>
+                    case INSTRUCTION:
+<span class="fc" id="L164">                        metricsMap.put(TOTAL_INSTRUCTIONS_COVERED, Pair.of(counter.getCovered(), CodeQualityMetricStatus.Ok));</span>
+<span class="fc" id="L165">                        metricsMap.put(TOTAL_INSTRUCTIONS_MISSED, Pair.of(counter.getMissed(), CodeQualityMetricStatus.Ok));</span>
+<span class="fc" id="L166">                        break;</span>
+                    default:
+                        // no impl
+                        break;
+                }
+<span class="fc" id="L171">            }</span>
+        }
+<span class="fc" id="L173">        this.sumMetrics(metricsMap);</span>
+        // now add in the missing one
+<span class="fc" id="L175">        Map&lt;String, CodeQualityMetric&gt; codeQualityMetricMap = new HashMap&lt;&gt;();</span>
+<span class="fc bfc" id="L176" title="All 2 branches covered.">        for (CodeQualityMetric metric : quality.getMetrics()) {</span>
+<span class="fc" id="L177">            codeQualityMetricMap.put(metric.getName(), metric);</span>
+<span class="fc" id="L178">        }</span>
+<span class="fc" id="L179">        final CodeQualityMetric lineCoverage = codeQualityMetricMap.remove(LINE_COVERAGE);</span>
+<span class="fc" id="L180">        quality.getMetrics().remove(lineCoverage);</span>
+<span class="fc" id="L181">        quality.addMetric(</span>
+<span class="fc" id="L182">                computeCoveragePercent(LINE_COVERAGE,</span>
+<span class="fc" id="L183">                        codeQualityMetricMap.get(TOTAL_LINES_COVERED),</span>
+<span class="fc" id="L184">                        codeQualityMetricMap.get(TOTAL_LINES_MISSED)));</span>
+<span class="fc" id="L185">        final CodeQualityMetric coverage = codeQualityMetricMap.remove(COVERAGE);</span>
+<span class="fc" id="L186">        quality.getMetrics().remove(coverage);</span>
+<span class="fc" id="L187">        quality.addMetric(</span>
+<span class="fc" id="L188">                computeCoveragePercent(COVERAGE,</span>
+<span class="fc" id="L189">                        codeQualityMetricMap.get(TOTAL_INSTRUCTIONS_COVERED),</span>
+<span class="fc" id="L190">                        codeQualityMetricMap.get(TOTAL_INSTRUCTIONS_MISSED)));</span>
+
+
+<span class="fc" id="L193">    }</span>
+
+    private CodeQualityMetric computeCoveragePercent(String metricName, CodeQualityMetric covered, CodeQualityMetric missed) {
+<span class="fc" id="L196">        double percentageCovered = 100.0;</span>
+<span class="fc bfc" id="L197" title="All 2 branches covered.">        if ( ((Integer)covered.getValue()).intValue() + ((Integer)missed.getValue()).intValue() &gt;0) {</span>
+<span class="fc" id="L198">            percentageCovered = ((Integer) covered.getValue()).doubleValue() * 100.0 / (((Integer) covered.getValue()).doubleValue() + ((Integer) missed.getValue()).doubleValue());</span>
+        }
+<span class="fc" id="L200">        CodeQualityMetric metric = new CodeQualityMetric(metricName);</span>
+<span class="fc" id="L201">        metric.setFormattedValue(String.format(&quot;%.3f&quot;, percentageCovered));</span>
+<span class="fc" id="L202">        metric.setValue(percentageCovered);</span>
+<span class="fc" id="L203">        metric.setStatus(CodeQualityMetricStatus.Ok);</span>
+<span class="fc" id="L204">        return metric;</span>
+    }
+
+
+    @Override
+    public void visit(PmdReport pmdReport) {
+<span class="fc" id="L210">        Map&lt;String, Pair&lt;Integer, CodeQualityMetricStatus&gt;&gt; metricsMap = new HashMap&lt;&gt;();</span>
+<span class="fc" id="L211">        metricsMap.put(BLOCKER_VIOLATIONS, Pair.of(0, CodeQualityMetricStatus.Ok));</span>
+<span class="fc" id="L212">        metricsMap.put(CRITICAL_VIOLATIONS, Pair.of(0, CodeQualityMetricStatus.Ok));</span>
+<span class="fc" id="L213">        metricsMap.put(MAJOR_VIOLCATIONS, Pair.of(0, CodeQualityMetricStatus.Ok));</span>
+<span class="fc" id="L214">        metricsMap.put(VIOLATIONS, Pair.of(0, CodeQualityMetricStatus.Ok));</span>
+
+        // loop over all the stuff in the report and accumulate violations.
+<span class="fc bfc" id="L217" title="All 2 branches covered.">        if (null != pmdReport.getFiles()) {</span>
+<span class="fc bfc" id="L218" title="All 2 branches covered.">            for (PmdReport.PmdFile violationFile : pmdReport.getFiles()) {</span>
+<span class="fc bfc" id="L219" title="All 2 branches covered.">                for (PmdReport.PmdViolation violation : violationFile.getViolations()) {</span>
+<span class="fc bfc" id="L220" title="All 4 branches covered.">                    switch (violation.getPriority()) {</span>
+                        case 1: {
+<span class="fc" id="L222">                            final Pair&lt;Integer, CodeQualityMetricStatus&gt; metricStatusPair = metricsMap.get(BLOCKER_VIOLATIONS);</span>
+<span class="fc" id="L223">                            final Pair newPair = Pair.of(metricStatusPair.getLeft().intValue() + 1, CodeQualityMetricStatus.Alert);</span>
+<span class="fc" id="L224">                            metricsMap.put(BLOCKER_VIOLATIONS, newPair);</span>
+<span class="fc" id="L225">                            break;</span>
+                        }
+                        case 2: {
+<span class="fc" id="L228">                            final Pair&lt;Integer, CodeQualityMetricStatus&gt; metricStatusPair = metricsMap.get(CRITICAL_VIOLATIONS);</span>
+<span class="fc" id="L229">                            final Pair newPair = Pair.of(metricStatusPair.getLeft().intValue() + 1, CodeQualityMetricStatus.Alert);</span>
+<span class="fc" id="L230">                            metricsMap.put(CRITICAL_VIOLATIONS, newPair);</span>
+<span class="fc" id="L231">                            break;</span>
+                        }
+                        case 3: {
+<span class="fc" id="L234">                            final Pair&lt;Integer, CodeQualityMetricStatus&gt; metricStatusPair = metricsMap.get(MAJOR_VIOLCATIONS);</span>
+<span class="fc" id="L235">                            final Pair newPair = Pair.of(metricStatusPair.getLeft().intValue() + 1, CodeQualityMetricStatus.Warning);</span>
+<span class="fc" id="L236">                            metricsMap.put(MAJOR_VIOLCATIONS, newPair);</span>
+<span class="fc" id="L237">                            break;</span>
+                        }
+                        default:
+<span class="fc" id="L240">                            final Pair&lt;Integer, CodeQualityMetricStatus&gt; metricStatusPair = metricsMap.get(VIOLATIONS);</span>
+<span class="fc" id="L241">                            final Pair newPair = Pair.of(metricStatusPair.getLeft().intValue() + 1, CodeQualityMetricStatus.Warning);</span>
+<span class="fc" id="L242">                            metricsMap.put(VIOLATIONS, newPair);</span>
+                            break;
+                    }
+<span class="fc" id="L245">                }</span>
+<span class="fc" id="L246">            }</span>
+        }
+
+        // finally produce the result
+<span class="fc" id="L250">        this.sumMetrics(metricsMap);</span>
+<span class="fc" id="L251">    }</span>
+
+    @Override
+    public void visit(CheckstyleReport checkstyleReport) {
+<span class="fc" id="L255">        Map&lt;String, Pair&lt;Integer, CodeQualityMetricStatus&gt;&gt; metricsMap = new HashMap&lt;&gt;();</span>
+<span class="fc" id="L256">        metricsMap.put(BLOCKER_VIOLATIONS, Pair.of(0, CodeQualityMetricStatus.Ok));</span>
+<span class="fc" id="L257">        metricsMap.put(CRITICAL_VIOLATIONS, Pair.of(0, CodeQualityMetricStatus.Ok));</span>
+<span class="fc" id="L258">        metricsMap.put(MAJOR_VIOLCATIONS, Pair.of(0, CodeQualityMetricStatus.Ok));</span>
+<span class="fc" id="L259">        metricsMap.put(VIOLATIONS, Pair.of(0, CodeQualityMetricStatus.Ok));</span>
+
+        // loop over all the stuff in the report and accumulate violations.
+<span class="fc bfc" id="L262" title="All 2 branches covered.">        if (null != checkstyleReport.getFiles()) {</span>
+<span class="fc bfc" id="L263" title="All 2 branches covered.">            for (CheckstyleReport.CheckstyleFile violationFile : checkstyleReport.getFiles()) {</span>
+<span class="fc bfc" id="L264" title="All 2 branches covered.">                for (CheckstyleReport.CheckstyleError violation : violationFile.getErrors()) {</span>
+<span class="pc bfc" id="L265" title="All 4 branches covered.">                    switch (violation.getSeverity()) {</span>
+                        case error: {
+<span class="fc" id="L267">                            final Pair&lt;Integer, CodeQualityMetricStatus&gt; metricStatusPair = metricsMap.get(BLOCKER_VIOLATIONS);</span>
+<span class="fc" id="L268">                            final Pair newPair = Pair.of(metricStatusPair.getLeft().intValue() + 1, CodeQualityMetricStatus.Alert);</span>
+<span class="fc" id="L269">                            metricsMap.put(BLOCKER_VIOLATIONS, newPair);</span>
+<span class="fc" id="L270">                            break;</span>
+                        }
+                        case warning: {
+<span class="fc" id="L273">                            final Pair&lt;Integer, CodeQualityMetricStatus&gt; metricStatusPair = metricsMap.get(CRITICAL_VIOLATIONS);</span>
+<span class="fc" id="L274">                            final Pair newPair = Pair.of(metricStatusPair.getLeft().intValue() + 1, CodeQualityMetricStatus.Alert);</span>
+<span class="fc" id="L275">                            metricsMap.put(CRITICAL_VIOLATIONS, newPair);</span>
+<span class="fc" id="L276">                            break;</span>
+                        }
+                        case info: {
+<span class="fc" id="L279">                            final Pair&lt;Integer, CodeQualityMetricStatus&gt; metricStatusPair = metricsMap.get(MAJOR_VIOLCATIONS);</span>
+<span class="fc" id="L280">                            final Pair newPair = Pair.of(metricStatusPair.getLeft().intValue() + 1, CodeQualityMetricStatus.Warning);</span>
+<span class="fc" id="L281">                            metricsMap.put(MAJOR_VIOLCATIONS, newPair);</span>
+<span class="fc" id="L282">                            break;</span>
+                        }
+                        default:
+<span class="fc" id="L285">                            final Pair&lt;Integer, CodeQualityMetricStatus&gt; metricStatusPair = metricsMap.get(VIOLATIONS);</span>
+<span class="fc" id="L286">                            final Pair newPair = Pair.of(metricStatusPair.getLeft().intValue() + 1, CodeQualityMetricStatus.Warning);</span>
+<span class="fc" id="L287">                            metricsMap.put(VIOLATIONS, newPair);</span>
+                            break;
+                    }
+<span class="fc" id="L290">                }</span>
+<span class="fc" id="L291">            }</span>
+        }
+
+        // finally produce the result
+<span class="fc" id="L295">        this.sumMetrics(metricsMap);</span>
+<span class="fc" id="L296">    }</span>
+
+    @Override
+    public CodeQuality produceResult() {
+<span class="fc" id="L300">        return quality;</span>
+    }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.0.201801022044</span></div></body></html>

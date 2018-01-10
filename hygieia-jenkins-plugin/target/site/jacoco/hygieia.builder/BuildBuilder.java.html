@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="zh"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>BuildBuilder.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Hygieia Publisher Plugin</a> &gt; <a href="index.source.html" class="el_package">hygieia.builder</a> &gt; <span class="el_source">BuildBuilder.java</span></div><h1>BuildBuilder.java</h1><pre class="source lang-java linenums">package hygieia.builder;
+
+import com.capitalone.dashboard.model.BuildStatus;
+import com.capitalone.dashboard.model.RepoBranch;
+import com.capitalone.dashboard.model.SCM;
+import com.capitalone.dashboard.request.BuildDataCreateRequest;
+import hudson.model.*;
+import hudson.plugins.git.GitSCM;
+import hudson.plugins.git.util.*;
+import hudson.scm.ChangeLogSet;
+import hudson.scm.SubversionSCM;
+import hygieia.utils.HygieiaUtils;
+import org.apache.commons.collections.CollectionUtils;
+import org.jenkinsci.plugins.multiplescms.MultiSCM;
+import org.jenkinsci.plugins.workflow.job.WorkflowRun;
+
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.logging.Logger;
+
+import static hygieia.utils.HygieiaUtils.getEnvironmentVariable;
+import static hygieia.utils.HygieiaUtils.getRepoBranch;
+
+public class BuildBuilder {
+
+<span class="fc" id="L30">    private static final Logger logger = Logger.getLogger(ArtifactBuilder.class.getName());</span>
+    private AbstractBuild&lt;?, ?&gt; build;
+    private Run&lt;?, ?&gt; run;
+    private String jenkinsName;
+    private TaskListener listener;
+    private boolean isComplete;
+    private BuildDataCreateRequest request;
+    private BuildStatus result;
+    boolean buildChangeSet;
+
+<span class="nc" id="L40">    public BuildBuilder(AbstractBuild&lt;?, ?&gt; build, String jenkinsName, TaskListener listener, boolean isComplete, boolean buildChangeSet) {</span>
+<span class="nc" id="L41">        this.build = build;</span>
+<span class="nc" id="L42">        this.jenkinsName = jenkinsName;</span>
+<span class="nc" id="L43">        this.listener = listener;</span>
+<span class="nc" id="L44">        this.isComplete = isComplete;</span>
+<span class="nc" id="L45">        this.buildChangeSet = buildChangeSet;</span>
+<span class="nc" id="L46">        createBuildRequest();</span>
+<span class="nc" id="L47">    }</span>
+
+<span class="fc" id="L49">    public BuildBuilder(Run&lt;?, ?&gt; run, String jenkinsName, TaskListener listener, BuildStatus result, boolean buildChangeSet) {</span>
+<span class="fc" id="L50">        this.run = run;</span>
+<span class="fc" id="L51">        this.jenkinsName = jenkinsName;</span>
+<span class="fc" id="L52">        this.listener = listener;</span>
+<span class="fc" id="L53">        this.result = result;</span>
+<span class="fc" id="L54">        this.buildChangeSet = buildChangeSet;</span>
+<span class="pc bpc" id="L55" title="1 of 2 branches missed.">        if (run instanceof AbstractBuild) {</span>
+<span class="nc" id="L56">            this.build = (AbstractBuild&lt;?, ?&gt;) run;</span>
+<span class="nc" id="L57">            createBuildRequest();</span>
+        } else {
+<span class="fc" id="L59">            createBuildRequestFromRun();</span>
+        }
+<span class="fc" id="L61">    }</span>
+
+    private void createBuildRequestFromRun() {
+<span class="fc" id="L64">        request = new BuildDataCreateRequest();</span>
+<span class="fc" id="L65">        request.setNiceName(jenkinsName);</span>
+<span class="fc" id="L66">        request.setJobName(HygieiaUtils.getJobName(run));</span>
+<span class="fc" id="L67">        request.setBuildUrl(HygieiaUtils.getBuildUrl(run));</span>
+<span class="fc" id="L68">        request.setJobUrl(HygieiaUtils.getJobUrl(run));</span>
+<span class="fc" id="L69">        request.setInstanceUrl(HygieiaUtils.getInstanceUrl(run, listener));</span>
+<span class="fc" id="L70">        request.setNumber(HygieiaUtils.getBuildNumber(run));</span>
+<span class="fc" id="L71">        request.setStartTime(run.getStartTimeInMillis());</span>
+<span class="fc" id="L72">        request.setBuildStatus(result.toString());</span>
+
+<span class="pc bpc" id="L74" title="1 of 2 branches missed.">        if (!result.equals(BuildStatus.InProgress)) {</span>
+<span class="fc" id="L75">            request.setDuration(System.currentTimeMillis() - run.getStartTimeInMillis());</span>
+<span class="fc" id="L76">            request.setEndTime(System.currentTimeMillis());</span>
+<span class="pc bpc" id="L77" title="1 of 2 branches missed.">            if (buildChangeSet) {</span>
+<span class="nc" id="L78">                request.setCodeRepos(getRepoBranch(run));</span>
+<span class="nc" id="L79">                WorkflowRun wr = (WorkflowRun) run;</span>
+<span class="nc" id="L80">                request.setSourceChangeSet(getCommitList(wr.getChangeSets()));</span>
+            }
+        }
+<span class="fc" id="L83">    }</span>
+
+    private void createBuildRequest() {
+<span class="nc" id="L86">        request = new BuildDataCreateRequest();</span>
+<span class="nc" id="L87">        request.setNiceName(jenkinsName);</span>
+<span class="nc" id="L88">        request.setJobName(HygieiaUtils.getJobName(build));</span>
+<span class="nc" id="L89">        request.setBuildUrl(HygieiaUtils.getBuildUrl(build));</span>
+<span class="nc" id="L90">        request.setJobUrl(HygieiaUtils.getJobUrl(build));</span>
+<span class="nc" id="L91">        request.setInstanceUrl(HygieiaUtils.getInstanceUrl(build, listener));</span>
+<span class="nc" id="L92">        request.setNumber(HygieiaUtils.getBuildNumber(build));</span>
+<span class="nc" id="L93">        request.setStartTime(build.getStartTimeInMillis());</span>
+<span class="nc bnc" id="L94" title="All 2 branches missed.">        if (isComplete) {</span>
+<span class="nc" id="L95">            request.setBuildStatus(build.getResult().toString());</span>
+<span class="nc" id="L96">            request.setDuration(build.getDuration());</span>
+<span class="nc" id="L97">            request.setEndTime(build.getStartTimeInMillis() + build.getDuration());</span>
+<span class="nc bnc" id="L98" title="All 2 branches missed.">            if (buildChangeSet) {</span>
+<span class="nc" id="L99">                request.setCodeRepos(getRepoBranch(build));</span>
+<span class="nc" id="L100">                ChangeLogSet&lt;? extends ChangeLogSet.Entry&gt; sets = build.getChangeSet();</span>
+<span class="nc bnc" id="L101" title="All 2 branches missed.">                List&lt;ChangeLogSet&lt;? extends ChangeLogSet.Entry&gt;&gt; changeLogSets = sets.isEmptySet() ? Collections.&lt;ChangeLogSet&lt;? extends ChangeLogSet.Entry&gt;&gt;emptyList() : Collections.&lt;ChangeLogSet&lt;? extends ChangeLogSet.Entry&gt;&gt;singletonList(sets);</span>
+<span class="nc" id="L102">                request.setSourceChangeSet(getCommitList(changeLogSets));</span>
+<span class="nc" id="L103">            }</span>
+        } else {
+<span class="nc" id="L105">            request.setBuildStatus(BuildStatus.InProgress.toString());</span>
+        }
+<span class="nc" id="L107">    }</span>
+
+    public BuildDataCreateRequest getBuildData() {
+<span class="fc" id="L110">        return request;</span>
+    }
+
+    private List&lt;SCM&gt; getCommitList(List&lt;ChangeLogSet&lt;? extends ChangeLogSet.Entry&gt;&gt; changeLogSets) {
+<span class="nc" id="L114">        CommitBuilder commitBuilder = new CommitBuilder(changeLogSets);</span>
+<span class="nc" id="L115">        return commitBuilder.getCommits();</span>
+    }
+
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.0.201801022044</span></div></body></html>

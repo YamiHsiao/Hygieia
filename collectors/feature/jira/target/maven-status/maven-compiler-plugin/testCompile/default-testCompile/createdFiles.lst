@@ -1,0 +1,4 @@
+com\capitalone\dashboard\util\ClientUtilTest.class
+com\capitalone\dashboard\client\team\TeamDataClientImplTest.class
+com\capitalone\dashboard\client\project\ProjectDataClientImplTest.class
+com\capitalone\dashboard\client\story\StoryDataClientImplTests.class

@@ -1,0 +1,763 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="zh"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>StoryDataClientImpl.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">com.capitalone.dashboard:jira-feature-collector</a> &gt; <a href="index.source.html" class="el_package">com.capitalone.dashboard.client.story</a> &gt; <span class="el_source">StoryDataClientImpl.java</span></div><h1>StoryDataClientImpl.java</h1><pre class="source lang-java linenums">/*************************DA-BOARD-LICENSE-START*********************************
+ * Copyright 2014 CapitalOne, LLC.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *************************DA-BOARD-LICENSE-END*********************************/
+
+package com.capitalone.dashboard.client.story;
+
+import com.atlassian.jira.rest.client.api.domain.BasicProject;
+import com.atlassian.jira.rest.client.api.domain.Issue;
+import com.atlassian.jira.rest.client.api.domain.IssueField;
+import com.atlassian.jira.rest.client.api.domain.IssueType;
+import com.atlassian.jira.rest.client.api.domain.User;
+import com.capitalone.dashboard.client.JiraClient;
+import com.capitalone.dashboard.client.Sprint;
+import com.capitalone.dashboard.model.Feature;
+import com.capitalone.dashboard.model.FeatureStatus;
+import com.capitalone.dashboard.model.Team;
+import com.capitalone.dashboard.repository.FeatureCollectorRepository;
+import com.capitalone.dashboard.repository.FeatureRepository;
+import com.capitalone.dashboard.repository.TeamRepository;
+import com.capitalone.dashboard.util.ClientUtil;
+import com.capitalone.dashboard.util.FeatureCollectorConstants;
+import com.capitalone.dashboard.util.CoreFeatureSettings;
+import com.capitalone.dashboard.util.DateUtil;
+import com.capitalone.dashboard.util.FeatureSettings;
+
+import org.apache.commons.lang.ObjectUtils;
+import org.apache.commons.lang3.StringUtils;
+import org.bson.types.ObjectId;
+import org.codehaus.jettison.json.JSONException;
+import org.codehaus.jettison.json.JSONObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.text.DateFormat;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+
+/**
+ * This is the primary implemented/extended data collector for the feature
+ * collector. This will get data from the source system, but will grab the
+ * majority of needed data and aggregate it in a single, flat MongoDB collection
+ * for consumption.
+ * 
+ * @author kfk884
+ * 
+ */
+public class StoryDataClientImpl implements StoryDataClient {
+<span class="fc" id="L71">	private static final Logger LOGGER = LoggerFactory.getLogger(StoryDataClientImpl.class);</span>
+<span class="fc" id="L72">	private static final ClientUtil TOOLS = ClientUtil.getInstance();</span>
+	private static final String TO_DO = &quot;To Do&quot;;
+	private static final String IN_PROGRESS = &quot;In Progress&quot;;
+	private static final String DONE = &quot;Done&quot;;
+	
+<span class="fc" id="L77">	private static final Comparator&lt;Sprint&gt; SPRINT_COMPARATOR = new Comparator&lt;Sprint&gt;() {</span>
+		@Override
+		public int compare(Sprint o1, Sprint o2) {
+<span class="fc" id="L80">			int cmp1 = ObjectUtils.compare(o1.getStartDateStr(), o2.getStartDateStr());</span>
+			
+<span class="pc bpc" id="L82" title="1 of 2 branches missed.">			if (cmp1 != 0) {</span>
+<span class="fc" id="L83">				return cmp1;</span>
+			}
+			
+<span class="nc" id="L86">			return ObjectUtils.compare(o1.getEndDateStr(), o2.getEndDateStr());</span>
+		}
+	};
+	
+	// works with ms too (just ignores them)
+<span class="fc" id="L91">	private final DateFormat SETTINGS_DATE_FORMAT = new SimpleDateFormat(&quot;yyyy-MM-dd'T'HH:mm:ss&quot;);</span>
+
+	private final FeatureSettings featureSettings;
+	private final FeatureRepository featureRepo;
+	private final FeatureCollectorRepository featureCollectorRepository;
+	private final TeamRepository teamRepository;
+	private final JiraClient jiraClient;
+	
+	// epicId : list of epics
+	private Map&lt;String, Issue&gt; epicCache;
+	private Set&lt;String&gt; todoCache;
+	private Set&lt;String&gt; inProgressCache;
+	private Set&lt;String&gt; doneCache;
+
+	/**
+	 * Extends the constructor from the super class.
+	 */
+	public StoryDataClientImpl(CoreFeatureSettings coreFeatureSettings, FeatureSettings featureSettings,
+			FeatureRepository featureRepository, FeatureCollectorRepository featureCollectorRepository, TeamRepository teamRepository,
+<span class="fc" id="L110">			JiraClient jiraClient) {</span>
+<span class="pc bpc" id="L111" title="1 of 2 branches missed.">		if (LOGGER.isDebugEnabled()) {</span>
+<span class="nc" id="L112">			LOGGER.debug(&quot;Constructing data collection for the feature widget, story-level data...&quot;);</span>
+		}
+
+<span class="fc" id="L115">		this.featureSettings = featureSettings;</span>
+<span class="fc" id="L116">		this.featureRepo = featureRepository;</span>
+<span class="fc" id="L117">		this.featureCollectorRepository = featureCollectorRepository;</span>
+<span class="fc" id="L118">		this.teamRepository = teamRepository;</span>
+<span class="fc" id="L119">		this.jiraClient = jiraClient;</span>
+		
+<span class="fc" id="L121">		this.epicCache = new HashMap&lt;&gt;();</span>
+		
+<span class="fc" id="L123">		todoCache = buildStatusCache(coreFeatureSettings.getTodoStatuses());</span>
+<span class="fc" id="L124">		inProgressCache = buildStatusCache(coreFeatureSettings.getDoingStatuses());</span>
+<span class="fc" id="L125">		doneCache = buildStatusCache(coreFeatureSettings.getDoneStatuses());</span>
+<span class="fc" id="L126">	}</span>
+
+	/**
+	 * Explicitly updates queries for the source system, and initiates the
+	 * update to MongoDB from those calls.
+	 */
+	public int updateStoryInformation() {
+<span class="fc" id="L133">		int count = 0;</span>
+<span class="fc" id="L134">		epicCache.clear(); // just in case class is made static w/ spring in future</span>
+		
+		//long startDate = featureCollectorRepository.findByName(FeatureCollectorConstants.JIRA).getLastExecuted();
+		
+<span class="fc" id="L138">		String startDateStr = featureSettings.getDeltaStartDate();</span>
+<span class="fc" id="L139">		String maxChangeDate = getMaxChangeDate();</span>
+<span class="pc bpc" id="L140" title="1 of 2 branches missed.">		if (maxChangeDate != null) {</span>
+<span class="nc" id="L141">			startDateStr = maxChangeDate;</span>
+		}
+		
+<span class="fc" id="L144">		startDateStr = getChangeDateMinutePrior(startDateStr);</span>
+		long startTime;
+		try {
+<span class="fc" id="L147">			startTime = SETTINGS_DATE_FORMAT.parse(startDateStr).getTime();</span>
+<span class="nc" id="L148">		} catch (ParseException e) {</span>
+<span class="nc" id="L149">			throw new RuntimeException(e);</span>
+<span class="fc" id="L150">		}</span>
+		
+<span class="fc" id="L152">		int pageSize = jiraClient.getPageSize();</span>
+				
+<span class="fc" id="L154">		updateStatuses();</span>
+
+<span class="fc" id="L156">		boolean hasMore = true;</span>
+<span class="pc bpc" id="L157" title="1 of 2 branches missed.">		for (int i = 0; hasMore; i += pageSize) {</span>
+<span class="pc bpc" id="L158" title="1 of 2 branches missed.">			if (LOGGER.isDebugEnabled()) {</span>
+<span class="nc" id="L159">				LOGGER.debug(&quot;Obtaining story information starting at index &quot; + i + &quot;...&quot;);</span>
+			}
+<span class="fc" id="L161">			long queryStart = System.currentTimeMillis();</span>
+<span class="fc" id="L162">			List&lt;Issue&gt; issues = jiraClient.getIssues(startTime, i);</span>
+<span class="pc bpc" id="L163" title="1 of 2 branches missed.">			if (LOGGER.isDebugEnabled()) {</span>
+<span class="nc" id="L164">				LOGGER.debug(&quot;Story information query took &quot; + (System.currentTimeMillis() - queryStart) + &quot; ms&quot;);</span>
+			}
+			
+<span class="pc bpc" id="L167" title="2 of 4 branches missed.">			if (issues != null &amp;&amp; !issues.isEmpty()) {</span>
+<span class="fc" id="L168">				updateMongoInfo(issues);</span>
+<span class="fc" id="L169">				count += issues.size();</span>
+			}
+
+<span class="fc" id="L172">			LOGGER.info(&quot;Loop i &quot; + i + &quot; pageSize &quot; + issues.size());</span>
+			
+			// will result in an extra call if number of results == pageSize
+			// but I would rather do that then complicate the jira client implementation
+<span class="pc bpc" id="L176" title="1 of 4 branches missed.">			if (issues == null || issues.size() &lt; pageSize) {</span>
+<span class="fc" id="L177">				hasMore = false;</span>
+<span class="fc" id="L178">				break;</span>
+			}
+		}
+		
+<span class="fc" id="L182">		return count;</span>
+	}
+
+	/**
+	 * Updates the MongoDB with a JSONArray received from the source system
+	 * back-end with story-based data.
+	 * 
+	 * @param currentPagedJiraRs
+	 *            A list response of Jira issues from the source system
+	 */
+	@SuppressWarnings({ &quot;PMD.AvoidDeeplyNestedIfStmts&quot;, &quot;PMD.NPathComplexity&quot; })
+	private void updateMongoInfo(List&lt;Issue&gt; currentPagedJiraRs) {
+<span class="pc bpc" id="L194" title="1 of 2 branches missed.">		if (LOGGER.isDebugEnabled()) {</span>
+<span class="nc bnc" id="L195" title="All 2 branches missed.">			LOGGER.debug(&quot;Size of paged Jira response: &quot; + (currentPagedJiraRs == null? 0 : currentPagedJiraRs.size()));</span>
+		}
+		
+<span class="pc bpc" id="L198" title="1 of 2 branches missed.">		if (currentPagedJiraRs != null) {</span>
+<span class="fc" id="L199">			List&lt;Feature&gt; featuresToSave = new ArrayList&lt;&gt;();</span>
+			
+<span class="fc" id="L201">			Map&lt;String, String&gt; issueEpics = new HashMap&lt;&gt;();</span>
+<span class="fc" id="L202">			ObjectId jiraFeatureId = featureCollectorRepository.findByName(FeatureCollectorConstants.JIRA).getId();</span>
+<span class="fc" id="L203">			Set&lt;String&gt; issueTypeNames = new HashSet&lt;&gt;();</span>
+<span class="fc bfc" id="L204" title="All 2 branches covered.">			for (String issueTypeName : featureSettings.getJiraIssueTypeNames()) {</span>
+<span class="fc" id="L205">				issueTypeNames.add(issueTypeName.toLowerCase(Locale.getDefault()));</span>
+			}
+			
+			
+<span class="fc bfc" id="L209" title="All 2 branches covered.">			for (Issue issue : currentPagedJiraRs) {</span>
+<span class="fc" id="L210">				String issueId = TOOLS.sanitizeResponse(issue.getId());</span>
+				
+<span class="fc" id="L212">				Feature feature = findOneFeature(issueId);</span>
+<span class="pc bpc" id="L213" title="1 of 2 branches missed.">				if (feature == null) {</span>
+<span class="fc" id="L214">					 feature = new Feature();</span>
+				}
+				
+<span class="fc" id="L217">				Map&lt;String, IssueField&gt; fields = buildFieldMap(issue.getFields());</span>
+<span class="fc" id="L218">				IssueType issueType = issue.getIssueType();</span>
+<span class="fc" id="L219">				User assignee = issue.getAssignee();</span>
+<span class="fc" id="L220">				IssueField epic = fields.get(featureSettings.getJiraEpicIdFieldName());</span>
+<span class="fc" id="L221">				IssueField sprint = fields.get(featureSettings.getJiraSprintDataFieldName());</span>
+				
+<span class="pc bpc" id="L223" title="1 of 2 branches missed.">				if (issueTypeNames.contains(TOOLS.sanitizeResponse(issueType.getName()).toLowerCase(Locale.getDefault()))) {</span>
+<span class="pc bpc" id="L224" title="1 of 2 branches missed.">					if (LOGGER.isDebugEnabled()) {</span>
+<span class="nc" id="L225">						LOGGER.debug(String.format(&quot;[%-12s] %s&quot;, </span>
+<span class="nc" id="L226">								TOOLS.sanitizeResponse(issue.getKey()),</span>
+<span class="nc" id="L227">								TOOLS.sanitizeResponse(issue.getSummary())));</span>
+					}
+					
+					// collectorId
+<span class="fc" id="L231">					feature.setCollectorId(jiraFeatureId);</span>
+					
+					// ID
+<span class="fc" id="L234">					feature.setsId(TOOLS.sanitizeResponse(issue.getId()));</span>
+					
+					// Type
+<span class="fc" id="L237">					feature.setsTypeId(TOOLS.sanitizeResponse(issueType.getId()));</span>
+<span class="fc" id="L238">					feature.setsTypeName(TOOLS.sanitizeResponse(issueType.getName()));</span>
+
+<span class="fc" id="L240">					processFeatureData(feature, issue, fields);</span>
+					
+					// delay processing epic data for performance
+<span class="pc bpc" id="L243" title="2 of 6 branches missed.">					if (epic != null &amp;&amp; epic.getValue() != null &amp;&amp; !TOOLS.sanitizeResponse(epic.getValue()).isEmpty()) {</span>
+<span class="fc" id="L244">						issueEpics.put(feature.getsId(), TOOLS.sanitizeResponse(epic.getValue()));</span>
+					}
+
+					
+<span class="fc" id="L248">					processSprintData(feature, sprint);</span>
+					
+<span class="fc" id="L250">					processAssigneeData(feature, assignee);</span>
+					
+<span class="fc" id="L252">					featuresToSave.add(feature);</span>
+				}
+<span class="fc" id="L254">			}</span>
+			
+			// Load epic data into cache
+<span class="pc bpc" id="L257" title="1 of 2 branches missed.">			if (LOGGER.isDebugEnabled()) {</span>
+<span class="nc" id="L258">				LOGGER.debug(&quot;Processing epic data&quot;);</span>
+			}
+			
+<span class="fc" id="L261">			long epicStartTime = System.currentTimeMillis();</span>
+<span class="fc" id="L262">			Collection&lt;String&gt; epicsToLoad = issueEpics.values();</span>
+<span class="fc" id="L263">			loadEpicData(epicsToLoad);</span>
+			
+<span class="fc bfc" id="L265" title="All 2 branches covered.">			for (Feature feature : featuresToSave) {</span>
+<span class="fc" id="L266">				String epicKey = issueEpics.get(feature.getsId());</span>
+				
+<span class="fc" id="L268">				processEpicData(feature, epicKey);</span>
+<span class="fc" id="L269">			}</span>
+			
+<span class="pc bpc" id="L271" title="1 of 2 branches missed.">			if (LOGGER.isDebugEnabled()) {</span>
+<span class="nc" id="L272">				LOGGER.debug(&quot;Processing epic data took &quot; + (System.currentTimeMillis() - epicStartTime) + &quot; ms&quot;);</span>
+			}
+			
+			// Saving back to MongoDB
+<span class="fc" id="L276">			featureRepo.save(featuresToSave);</span>
+		}
+<span class="fc" id="L278">	}</span>
+	
+	@SuppressWarnings({&quot;PMD.ExcessiveMethodLength&quot;, &quot;PMD.NPathComplexity&quot;})
+	private void processFeatureData(Feature feature, Issue issue, Map&lt;String, IssueField&gt; fields) {
+<span class="fc" id="L282">		BasicProject project = issue.getProject();</span>
+<span class="fc" id="L283">		String status = this.toCanonicalFeatureStatus(issue.getStatus().getName());</span>
+<span class="fc" id="L284">		String changeDate = issue.getUpdateDate().toString();</span>
+		
+		// sNumber
+<span class="fc" id="L287">		feature.setsNumber(TOOLS.sanitizeResponse(issue.getKey()));</span>
+
+		// sName
+<span class="fc" id="L290">		feature.setsName(TOOLS.sanitizeResponse(issue.getSummary()));</span>
+
+		// sStatus
+<span class="fc" id="L293">		feature.setsStatus(TOOLS.sanitizeResponse(status));</span>
+
+		// sState
+<span class="fc" id="L296">		feature.setsState(TOOLS.sanitizeResponse(status));</span>
+		
+		// sUrl (Example: 'http://my.jira.com/browse/KEY-1001')
+<span class="fc" id="L299">        feature.setsUrl(featureSettings.getJiraBaseUrl() </span>
+<span class="pc bpc" id="L300" title="1 of 2 branches missed.">                + (featureSettings.getJiraBaseUrl().substring(featureSettings.getJiraBaseUrl().length()-1).equals(&quot;/&quot;) ? &quot;&quot; : &quot;/&quot;)</span>
+<span class="fc" id="L301">                + &quot;browse/&quot; + TOOLS.sanitizeResponse(issue.getKey()));</span>
+		
+<span class="fc" id="L303">		int originalEstimate = 0;</span>
+		
+		// Tasks use timetracking, stories use aggregatetimeoriginalestimate and aggregatetimeestimate
+<span class="pc bpc" id="L306" title="2 of 4 branches missed.">		if (issue.getTimeTracking() != null &amp;&amp; issue.getTimeTracking().getOriginalEstimateMinutes() != null) {</span>
+<span class="fc" id="L307">			originalEstimate = issue.getTimeTracking().getOriginalEstimateMinutes();</span>
+<span class="nc bnc" id="L308" title="All 2 branches missed.">		} else if (fields.get(&quot;aggregatetimeoriginalestimate&quot;) != null</span>
+<span class="nc bnc" id="L309" title="All 2 branches missed.">				&amp;&amp; fields.get(&quot;aggregatetimeoriginalestimate&quot;).getValue() != null) {</span>
+			// this value is in seconds
+<span class="nc" id="L311">			originalEstimate = ((Integer)fields.get(&quot;aggregatetimeoriginalestimate&quot;).getValue()) / 60;</span>
+		}
+		
+<span class="fc" id="L314">		feature.setsEstimateTime(originalEstimate);</span>
+		
+		// sStoryPoints
+<span class="fc" id="L317">		IssueField storyPointsField = fields.get(featureSettings.getJiraStoryPointsFieldName());</span>
+<span class="pc bpc" id="L318" title="2 of 6 branches missed.">		if (storyPointsField != null &amp;&amp; storyPointsField.getValue() != null &amp;&amp; !TOOLS.sanitizeResponse(storyPointsField.getValue()).isEmpty()) {</span>
+			try {
+<span class="fc" id="L320">				Double value = Double.parseDouble(TOOLS.sanitizeResponse(storyPointsField.getValue()));</span>
+<span class="fc" id="L321">				feature.setsEstimate(String.valueOf(value.intValue()));</span>
+<span class="nc" id="L322">			} catch (NumberFormatException nfe) {</span>
+<span class="nc" id="L323">				LOGGER.error (&quot;Issue: &quot; +issue.getKey()+ &quot; :The story points field value '&quot; +storyPointsField.getValue()+ &quot;' is not a valid number. Setting the estimate to '0'&quot;);</span>
+<span class="nc" id="L324">				feature.setsEstimate(&quot;0&quot;);</span>
+<span class="pc" id="L325">			}</span>
+		} else {
+<span class="fc" id="L327">			feature.setsEstimate(&quot;0&quot;);</span>
+		}
+
+		// sChangeDate
+<span class="fc" id="L331">		feature.setChangeDate(TOOLS.toCanonicalDate(TOOLS.sanitizeResponse(changeDate)));</span>
+
+		// IsDeleted - does not exist for Jira
+<span class="fc" id="L334">		feature.setIsDeleted(&quot;False&quot;);</span>
+
+		// sProjectID
+<span class="fc" id="L337">		feature.setsProjectID(TOOLS.sanitizeResponse(project.getId()));</span>
+
+		// sProjectName
+<span class="fc" id="L340">		feature.setsProjectName(TOOLS.sanitizeResponse(project.getName()));</span>
+
+		// sProjectBeginDate - does not exist in Jira
+<span class="fc" id="L343">		feature.setsProjectBeginDate(&quot;&quot;);</span>
+
+		// sProjectEndDate - does not exist in Jira
+<span class="fc" id="L346">		feature.setsProjectEndDate(&quot;&quot;);</span>
+
+		// sProjectChangeDate - does not exist for this asset level in Jira
+<span class="fc" id="L349">		feature.setsProjectChangeDate(&quot;&quot;);</span>
+
+		// sProjectState - does not exist in Jira
+<span class="fc" id="L352">		feature.setsProjectState(&quot;&quot;);</span>
+
+		// sProjectIsDeleted - does not exist in Jira
+<span class="fc" id="L355">		feature.setsProjectIsDeleted(&quot;False&quot;);</span>
+
+		// sProjectPath - does not exist in Jira
+<span class="fc" id="L358">		feature.setsProjectPath(&quot;&quot;);</span>
+		
+
+<span class="fc" id="L361">		IssueField team = fields.get(featureSettings.getJiraTeamFieldName());</span>
+<span class="pc bpc" id="L362" title="2 of 6 branches missed.">		if (team != null &amp;&amp; team.getValue() != null &amp;&amp; !TOOLS.sanitizeResponse(team.getValue()).isEmpty()) {</span>
+<span class="fc" id="L363">			Object teamObj = team.getValue();</span>
+
+<span class="fc" id="L365">			String teamID = &quot;&quot;;</span>
+<span class="fc" id="L366">			Team scopeOwner = null;</span>
+<span class="pc bpc" id="L367" title="1 of 2 branches missed.">			if (teamObj instanceof JSONObject) {</span>
+				try {
+<span class="nc" id="L369">					String teamName = (String)((JSONObject)teamObj).get(&quot;value&quot;);</span>
+<span class="nc" id="L370">					scopeOwner = teamRepository.findByName(teamName);</span>
+<span class="nc bnc" id="L371" title="All 2 branches missed.">					if (scopeOwner != null) {</span>
+<span class="nc" id="L372">						teamID = scopeOwner.getTeamId();</span>
+					}
+<span class="nc" id="L374">				} catch (JSONException e) {</span>
+<span class="nc" id="L375">					LOGGER.error(&quot;Unable to parse value for &quot; + teamObj);</span>
+<span class="nc" id="L376">				}</span>
+			} else {
+<span class="fc" id="L378">				teamID = TOOLS.sanitizeResponse(team.getValue());</span>
+<span class="fc" id="L379">				scopeOwner = teamRepository.findByTeamId(teamID);</span>
+			}
+
+			// sTeamID
+<span class="fc" id="L383">			feature.setsTeamID(teamID);</span>
+<span class="pc bpc" id="L384" title="2 of 4 branches missed.">			if (scopeOwner != null &amp;&amp; StringUtils.isNotEmpty(scopeOwner.getName())) {</span>
+			    // sTeamName
+<span class="fc" id="L386">				feature.setsTeamName(TOOLS.sanitizeResponse(scopeOwner.getName()));</span>
+			}
+		}
+		
+		// sTeamChangeDate - not able to retrieve at this asset level from Jira
+<span class="fc" id="L391">		feature.setsTeamChangeDate(&quot;&quot;);</span>
+
+		// sTeamAssetState
+<span class="fc" id="L394">		feature.setsTeamAssetState(&quot;&quot;);</span>
+
+		// sTeamIsDeleted
+<span class="fc" id="L397">		feature.setsTeamIsDeleted(&quot;False&quot;);</span>
+
+		// sOwnersState - does not exist in Jira at this level
+<span class="fc" id="L400">		feature.setsOwnersState(Arrays.asList(&quot;Active&quot;));</span>
+
+		// sOwnersChangeDate - does not exist in Jira
+<span class="fc" id="L403">		feature.setsOwnersChangeDate(TOOLS.toCanonicalList(Collections.&lt;String&gt;emptyList()));</span>
+
+		// sOwnersIsDeleted - does not exist in Jira
+<span class="fc" id="L406">		feature.setsOwnersIsDeleted(TOOLS.toCanonicalList(Collections.&lt;String&gt;emptyList()));</span>
+<span class="fc" id="L407">	}</span>
+	
+	private void processEpicData(Feature feature, String epicKey) {
+<span class="pc bpc" id="L410" title="1 of 4 branches missed.">		if (epicKey != null &amp;&amp; !epicKey.isEmpty()) {</span>
+<span class="fc" id="L411">			Issue epicData = getEpicData(epicKey);</span>
+<span class="pc bpc" id="L412" title="1 of 2 branches missed.">			if (epicData != null) {</span>
+<span class="fc" id="L413">				String epicId = epicData.getId().toString();</span>
+<span class="fc" id="L414">				String epicNumber = epicData.getKey().toString();</span>
+<span class="fc" id="L415">				String epicName = epicData.getSummary().toString();</span>
+<span class="fc" id="L416">				String epicBeginDate = epicData.getCreationDate().toString();</span>
+<span class="fc" id="L417">				String epicStatus = epicData.getStatus().getName();</span>
+	
+				// sEpicID
+<span class="fc" id="L420">				feature.setsEpicID(TOOLS.sanitizeResponse(epicId));</span>
+	
+				// sEpicNumber
+<span class="fc" id="L423">				feature.setsEpicNumber(TOOLS.sanitizeResponse(epicNumber));</span>
+	
+				// sEpicName
+<span class="fc" id="L426">				feature.setsEpicName(TOOLS.sanitizeResponse(epicName));</span>
+				
+				// sEpicUrl (Example: 'http://my.jira.com/browse/KEY-1001')
+<span class="fc" id="L429">		        feature.setsEpicUrl(featureSettings.getJiraBaseUrl() </span>
+<span class="pc bpc" id="L430" title="1 of 2 branches missed.">		                + (featureSettings.getJiraBaseUrl().substring(featureSettings.getJiraBaseUrl().length()-1).equals(&quot;/&quot;) ? &quot;&quot; : &quot;/&quot;)</span>
+<span class="fc" id="L431">		                + &quot;browse/&quot; + TOOLS.sanitizeResponse(epicNumber));</span>
+	
+				// sEpicBeginDate - mapped to create date
+<span class="pc bpc" id="L434" title="2 of 4 branches missed.">				if ((epicBeginDate != null) &amp;&amp; !(epicBeginDate.isEmpty())) {</span>
+<span class="fc" id="L435">					feature.setsEpicBeginDate(TOOLS.toCanonicalDate(</span>
+<span class="fc" id="L436">							TOOLS.sanitizeResponse(epicBeginDate)));</span>
+				} else {
+<span class="nc" id="L438">					feature.setsEpicBeginDate(&quot;&quot;);</span>
+				}
+	
+				// sEpicEndDate
+<span class="pc bpc" id="L442" title="1 of 2 branches missed.">				if (epicData.getDueDate() != null) {</span>
+<span class="fc" id="L443">					feature.setsEpicEndDate(TOOLS.toCanonicalDate(</span>
+<span class="fc" id="L444">							TOOLS.sanitizeResponse(epicData.getDueDate())));</span>
+				} else {
+<span class="nc" id="L446">					feature.setsEpicEndDate(&quot;&quot;);</span>
+				}
+	
+				// sEpicAssetState
+<span class="pc bpc" id="L450" title="1 of 2 branches missed.">				if (epicStatus != null) {</span>
+<span class="fc" id="L451">					feature.setsEpicAssetState(TOOLS.sanitizeResponse(epicStatus));</span>
+				} else {
+<span class="nc" id="L453">					feature.setsEpicAssetState(&quot;&quot;);</span>
+				}
+<span class="fc" id="L455">			} else {</span>
+<span class="nc" id="L456">				feature.setsEpicID(&quot;&quot;);</span>
+<span class="nc" id="L457">				feature.setsEpicNumber(&quot;&quot;);</span>
+<span class="nc" id="L458">				feature.setsEpicName(&quot;&quot;);</span>
+<span class="nc" id="L459">				feature.setsEpicBeginDate(&quot;&quot;);</span>
+<span class="nc" id="L460">				feature.setsEpicEndDate(&quot;&quot;);</span>
+<span class="nc" id="L461">				feature.setsEpicType(&quot;&quot;);</span>
+<span class="nc" id="L462">				feature.setsEpicAssetState(&quot;&quot;);</span>
+<span class="nc" id="L463">				feature.setsEpicChangeDate(&quot;&quot;);</span>
+			}
+<span class="fc" id="L465">		} else {</span>
+<span class="fc" id="L466">			feature.setsEpicID(&quot;&quot;);</span>
+<span class="fc" id="L467">			feature.setsEpicNumber(&quot;&quot;);</span>
+<span class="fc" id="L468">			feature.setsEpicName(&quot;&quot;);</span>
+<span class="fc" id="L469">			feature.setsEpicBeginDate(&quot;&quot;);</span>
+<span class="fc" id="L470">			feature.setsEpicEndDate(&quot;&quot;);</span>
+<span class="fc" id="L471">			feature.setsEpicType(&quot;&quot;);</span>
+<span class="fc" id="L472">			feature.setsEpicAssetState(&quot;&quot;);</span>
+<span class="fc" id="L473">			feature.setsEpicChangeDate(&quot;&quot;);</span>
+		}
+		
+		// sEpicType - does not exist in jira
+<span class="fc" id="L477">		feature.setsEpicType(&quot;&quot;);</span>
+
+		// sEpicChangeDate - does not exist in jira
+<span class="fc" id="L480">		feature.setsEpicChangeDate(&quot;&quot;);</span>
+
+		// sEpicIsDeleted - does not exist in Jira
+<span class="fc" id="L483">		feature.setsEpicIsDeleted(&quot;False&quot;);</span>
+<span class="fc" id="L484">	}</span>
+	
+	@SuppressWarnings(&quot;PMD.NPathComplexity&quot;)
+	private void processSprintData(Feature feature, IssueField sprintField) {
+<span class="pc bpc" id="L488" title="2 of 6 branches missed.">		if (sprintField != null &amp;&amp; sprintField.getValue() != null &amp;&amp; !&quot;&quot;.equals(sprintField.getValue())) {</span>
+<span class="fc" id="L489">			Object sValue = sprintField.getValue();</span>
+			
+			try {
+<span class="fc" id="L492">				List&lt;Sprint&gt; sprints = TOOLS.parseSprints(sValue);</span>
+
+				// Now sort so we can use the most recent one
+				// yyyy-MM-dd'T'HH:mm:ss format so string compare will be fine
+<span class="fc" id="L496">				Collections.sort(sprints, SPRINT_COMPARATOR);</span>
+				
+<span class="pc bpc" id="L498" title="1 of 2 branches missed.">				if (!sprints.isEmpty()) {</span>
+					// Use the latest sprint
+<span class="fc" id="L500">					Sprint sprint = sprints.get(sprints.size() - 1);</span>
+					
+					// sSprintID
+<span class="pc bpc" id="L503" title="1 of 2 branches missed.">					if (sprint.getId() != null) {</span>
+<span class="fc" id="L504">						feature.setsSprintID(String.valueOf(sprint.getId()));</span>
+					} else {
+<span class="nc" id="L506">						feature.setsSprintID(&quot;&quot;);</span>
+					}
+					
+					// sSprintName
+<span class="pc bpc" id="L510" title="1 of 2 branches missed.">					if (sprint.getName() != null) {</span>
+<span class="fc" id="L511">						feature.setsSprintName(sprint.getName());</span>
+					} else {
+<span class="nc" id="L513">						feature.setsSprintName(&quot;&quot;);</span>
+					}
+					
+					// sSprintUrl (Example: 'http://my.jira.com/secure/RapidBoard.jspa?rapidView=123&amp;view=reporting&amp;chart=sprintRetrospective&amp;sprint=1597' where sprintID = 1597 and rapidViewID = 123)
+<span class="pc bpc" id="L517" title="2 of 4 branches missed.">					if (StringUtils.isNotEmpty(feature.getsSprintID()) &amp;&amp; sprint.getRapidViewId() != null) {</span>
+<span class="fc" id="L518">    			        feature.setsSprintUrl(featureSettings.getJiraBaseUrl() </span>
+<span class="pc bpc" id="L519" title="1 of 2 branches missed.">    			                + (featureSettings.getJiraBaseUrl().substring(featureSettings.getJiraBaseUrl().length()-1).equals(&quot;/&quot;) ? &quot;&quot; : &quot;/&quot;)</span>
+<span class="fc" id="L520">    			                + &quot;secure/RapidBoard.jspa?rapidView=&quot; + sprint.getRapidViewId()</span>
+<span class="fc" id="L521">    			                + &quot;&amp;view=reporting&amp;chart=sprintRetrospective&amp;sprint=&quot; + feature.getsSprintID());</span>
+					}
+	
+					// sSprintBeginDate
+<span class="pc bpc" id="L525" title="1 of 2 branches missed.">					if (sprint.getStartDateStr() != null) {</span>
+<span class="fc" id="L526">						feature.setsSprintBeginDate(TOOLS.toCanonicalDate(sprint.getStartDateStr()));</span>
+					} else {
+<span class="nc" id="L528">						feature.setsSprintBeginDate(&quot;&quot;);</span>
+					}
+	
+					// sSprintEndDate
+<span class="pc bpc" id="L532" title="1 of 2 branches missed.">					if (sprint.getEndDateStr() != null) {</span>
+<span class="fc" id="L533">						feature.setsSprintEndDate(TOOLS.toCanonicalDate(sprint.getEndDateStr()));</span>
+					} else {
+<span class="nc" id="L535">						feature.setsSprintEndDate(&quot;&quot;);</span>
+					}
+	
+					// sSprintAssetState
+<span class="pc bpc" id="L539" title="1 of 2 branches missed.">					if (sprint.getState() != null) {</span>
+<span class="fc" id="L540">						feature.setsSprintAssetState(sprint.getState());</span>
+					} else {
+<span class="nc" id="L542">						feature.setsSprintAssetState(&quot;&quot;);</span>
+					}
+<span class="fc" id="L544">				} else {</span>
+<span class="nc" id="L545">					LOGGER.error(&quot;Failed to obtain sprint data from &quot; + sValue);</span>
+				}
+<span class="nc" id="L547">			} catch (ParseException | RuntimeException e) {</span>
+<span class="nc" id="L548">				LOGGER.error(&quot;Failed to obtain sprint data from &quot; + sValue, e);</span>
+<span class="fc" id="L549">			}</span>
+<span class="fc" id="L550">		} else {</span>
+			// Issue #678 - leave sprint blank. Not having a sprint does not imply kanban
+			// as a story on a scrum board without a sprint is really on the backlog
+<span class="fc" id="L553">			feature.setsSprintID(&quot;&quot;);</span>
+<span class="fc" id="L554">			feature.setsSprintName(&quot;&quot;);</span>
+<span class="fc" id="L555">			feature.setsSprintBeginDate(&quot;&quot;);</span>
+<span class="fc" id="L556">			feature.setsSprintEndDate(&quot;&quot;);</span>
+<span class="fc" id="L557">			feature.setsSprintAssetState(&quot;&quot;);</span>
+		}
+
+		// sSprintChangeDate - does not exist in Jira
+<span class="fc" id="L561">		feature.setsSprintChangeDate(&quot;&quot;);</span>
+
+		// sSprintIsDeleted - does not exist in Jira
+<span class="fc" id="L564">		feature.setsSprintIsDeleted(&quot;False&quot;);</span>
+<span class="fc" id="L565">	}</span>
+	
+	private void processAssigneeData(Feature feature, User assignee) {
+<span class="pc bpc" id="L568" title="1 of 2 branches missed.">		if (assignee != null) {</span>
+			// sOwnersID
+<span class="fc" id="L570">			List&lt;String&gt; assigneeKey = new ArrayList&lt;String&gt;();</span>
+			// sOwnersShortName
+			// sOwnersUsername
+<span class="fc" id="L573">			List&lt;String&gt; assigneeName = new ArrayList&lt;String&gt;();</span>
+<span class="pc bpc" id="L574" title="2 of 4 branches missed.">			if (!assignee.getName().isEmpty() &amp;&amp; (assignee.getName() != null)) {</span>
+<span class="fc" id="L575">				assigneeKey.add(TOOLS.sanitizeResponse(assignee.getName()));</span>
+<span class="fc" id="L576">				assigneeName.add(TOOLS.sanitizeResponse(assignee.getName()));</span>
+
+			} else {
+<span class="nc" id="L579">				assigneeKey = new ArrayList&lt;String&gt;();</span>
+<span class="nc" id="L580">				assigneeName = new ArrayList&lt;String&gt;();</span>
+			}
+<span class="fc" id="L582">			feature.setsOwnersShortName(assigneeName);</span>
+<span class="fc" id="L583">			feature.setsOwnersUsername(assigneeName);</span>
+<span class="fc" id="L584">			feature.setsOwnersID(assigneeKey);</span>
+
+			// sOwnersFullName
+<span class="fc" id="L587">			List&lt;String&gt; assigneeDisplayName = new ArrayList&lt;String&gt;();</span>
+<span class="pc bpc" id="L588" title="2 of 4 branches missed.">			if (!assignee.getDisplayName().isEmpty() &amp;&amp; (assignee.getDisplayName() != null)) {</span>
+<span class="fc" id="L589">				assigneeDisplayName.add(TOOLS.sanitizeResponse(assignee.getDisplayName()));</span>
+			} else {
+<span class="nc" id="L591">				assigneeDisplayName.add(&quot;&quot;);</span>
+			}
+<span class="fc" id="L593">			feature.setsOwnersFullName(assigneeDisplayName);</span>
+<span class="fc" id="L594">		} else {</span>
+<span class="nc" id="L595">			feature.setsOwnersUsername(new ArrayList&lt;String&gt;());</span>
+<span class="nc" id="L596">			feature.setsOwnersShortName(new ArrayList&lt;String&gt;());</span>
+<span class="nc" id="L597">			feature.setsOwnersID(new ArrayList&lt;String&gt;());</span>
+<span class="nc" id="L598">			feature.setsOwnersFullName(new ArrayList&lt;String&gt;());</span>
+		}
+<span class="fc" id="L600">	}</span>
+
+	/**
+	 * ETL for converting any number of custom Jira statuses to a reduced list
+	 * of generally logical statuses used by Hygieia
+	 * 
+	 * @param nativeStatus
+	 *            The status label as native to Jira
+	 * @return A Hygieia-canonical status, as defined by a Core enum
+	 */
+	private String toCanonicalFeatureStatus(String nativeStatus) {
+		// default to backlog
+<span class="fc" id="L612">		String canonicalStatus = FeatureStatus.BACKLOG.getStatus();</span>
+		
+<span class="pc bpc" id="L614" title="1 of 2 branches missed.">		if (nativeStatus != null) {</span>
+<span class="fc" id="L615">			String nsLower = nativeStatus.toLowerCase(Locale.getDefault());</span>
+			
+<span class="fc bfc" id="L617" title="All 2 branches covered.">			if (todoCache.contains(nsLower)) {</span>
+<span class="fc" id="L618">				canonicalStatus = FeatureStatus.BACKLOG.getStatus();</span>
+<span class="pc bpc" id="L619" title="1 of 2 branches missed.">			} else if (inProgressCache.contains(nsLower)) {</span>
+<span class="nc" id="L620">				canonicalStatus = FeatureStatus.IN_PROGRESS.getStatus();</span>
+<span class="pc bpc" id="L621" title="1 of 2 branches missed.">			} else if (doneCache.contains(nsLower)) {</span>
+<span class="fc" id="L622">				canonicalStatus = FeatureStatus.DONE.getStatus();</span>
+			}
+		}
+		
+<span class="fc" id="L626">		return canonicalStatus;</span>
+	}
+	
+	/**
+	 * Retrieves the maximum change date for a given query.
+	 * 
+	 * @return A list object of the maximum change date
+	 */
+	public String getMaxChangeDate() {
+<span class="fc" id="L635">		String data = null;</span>
+
+		try {
+<span class="fc" id="L638">			List&lt;Feature&gt; response = featureRepo</span>
+<span class="fc" id="L639">					.findTopByCollectorIdAndChangeDateGreaterThanOrderByChangeDateDesc(</span>
+<span class="fc" id="L640">							featureCollectorRepository.findByName(FeatureCollectorConstants.JIRA).getId(),</span>
+<span class="fc" id="L641">							featureSettings.getDeltaStartDate());</span>
+<span class="pc bpc" id="L642" title="2 of 4 branches missed.">			if ((response != null) &amp;&amp; !response.isEmpty()) {</span>
+<span class="nc" id="L643">				data = response.get(0).getChangeDate();</span>
+			}
+<span class="nc" id="L645">		} catch (Exception e) {</span>
+<span class="nc" id="L646">			LOGGER.error(&quot;There was a problem retrieving or parsing data from the local &quot;</span>
+					+ &quot;repository while retrieving a max change date\nReturning null&quot;, e);
+<span class="fc" id="L648">		}</span>
+
+<span class="fc" id="L650">		return data;</span>
+	}
+	
+	private void loadEpicData(Collection&lt;String&gt; epicKeys) {
+		// No need to lookup items that are already cached
+<span class="fc" id="L655">		Set&lt;String&gt; epicsToLookup = new HashSet&lt;&gt;();</span>
+<span class="fc" id="L656">		epicsToLookup.addAll(epicKeys);</span>
+<span class="fc" id="L657">		epicsToLookup.removeAll(epicCache.keySet());</span>
+		
+<span class="fc" id="L659">		List&lt;String&gt; epicsToLookupL = new ArrayList&lt;&gt;(epicsToLookup);</span>
+		
+<span class="fc bfc" id="L661" title="All 2 branches covered.">		if (!epicsToLookupL.isEmpty()) {</span>
+<span class="pc bpc" id="L662" title="1 of 2 branches missed.">			if (LOGGER.isDebugEnabled()) {</span>
+<span class="nc" id="L663">				LOGGER.debug(&quot;Obtaining epic information for epics: &quot; + epicsToLookupL);</span>
+			}
+			
+			// Do this at most 50 at a time as jira doesn't seem to always work when there are a lot of items in an in clause
+<span class="fc" id="L667">			int maxEpicsToLookup = Math.min(featureSettings.getPageSize(), 50);</span>
+			
+<span class="fc bfc" id="L669" title="All 2 branches covered.">			for (int i = 0; i &lt; epicsToLookupL.size(); i += maxEpicsToLookup) {</span>
+<span class="fc" id="L670">				int endIdx = Math.min(i + maxEpicsToLookup, epicsToLookupL.size());</span>
+				
+<span class="fc" id="L672">				List&lt;String&gt; epicKeysSub = epicsToLookupL.subList(i, endIdx);</span>
+				
+<span class="fc" id="L674">				List&lt;Issue&gt; epics = jiraClient.getEpics(epicKeysSub);</span>
+				
+<span class="pc bpc" id="L676" title="1 of 2 branches missed.">				for (Issue epic : epics) {</span>
+<span class="nc" id="L677">					String epicKey = epic.getKey();</span>
+					
+<span class="nc" id="L679">					epicCache.put(epicKey, epic);</span>
+<span class="nc" id="L680">				}</span>
+			}
+		}
+<span class="fc" id="L683">	}</span>
+
+	/**
+	 * Retrieves the related Epic to the current issue from Jira. To make this
+	 * thread-safe, please synchronize and lock on the result of this method.
+	 * 
+	 * @param epicKey
+	 *            A given Epic Key
+	 * @return A valid Jira Epic issue object
+	 */
+	private Issue getEpicData(String epicKey) {
+<span class="pc bpc" id="L694" title="1 of 2 branches missed.">		if (epicCache.containsKey(epicKey)) {</span>
+<span class="nc" id="L695">			return epicCache.get(epicKey);</span>
+		} else {
+<span class="fc" id="L697">			Issue epic = jiraClient.getEpic(epicKey);</span>
+<span class="fc" id="L698">			epicCache.put(epicKey, epic);</span>
+			
+<span class="fc" id="L700">			return epic;</span>
+		}
+	}
+	
+	private String getChangeDateMinutePrior(String changeDateISO) {
+<span class="fc" id="L705">		int priorMinutes = this.featureSettings.getScheduledPriorMin();</span>
+<span class="fc" id="L706">		return DateUtil.toISODateRealTimeFormat(DateUtil.getDatePriorToMinutes(</span>
+<span class="fc" id="L707">				DateUtil.fromISODateTimeFormat(changeDateISO), priorMinutes));</span>
+	}
+	
+	private Feature findOneFeature(String featureId) {
+<span class="fc" id="L711">		List&lt;Feature&gt; features = featureRepo.getFeatureIdById(featureId);</span>
+		
+		// Not sure of the state of the data
+<span class="pc bpc" id="L714" title="1 of 2 branches missed.">		if (features.size() &gt; 1) {</span>
+<span class="nc" id="L715">			LOGGER.warn(&quot;More than one collector item found for scopeId &quot; + featureId);</span>
+		}
+		
+<span class="pc bpc" id="L718" title="1 of 2 branches missed.">		if (!features.isEmpty()) {</span>
+<span class="nc" id="L719">			return features.get(0);</span>
+		}
+		
+<span class="fc" id="L722">		return null;</span>
+	}
+	
+	private Map&lt;String, IssueField&gt; buildFieldMap(Iterable&lt;IssueField&gt; fields) {
+<span class="fc" id="L726">		Map&lt;String, IssueField&gt; rt = new HashMap&lt;String, IssueField&gt;();</span>
+		
+<span class="pc bpc" id="L728" title="1 of 2 branches missed.">		if (fields != null) {</span>
+<span class="fc bfc" id="L729" title="All 2 branches covered.">			for (IssueField issueField : fields) {</span>
+<span class="fc" id="L730">				rt.put(issueField.getId(), issueField);</span>
+<span class="fc" id="L731">			}</span>
+		}
+		
+<span class="fc" id="L734">		return rt;</span>
+	}
+	
+	private Set&lt;String&gt; buildStatusCache(List&lt;String&gt; statuses) {
+<span class="fc" id="L738">		Set&lt;String&gt; rt = new HashSet&lt;&gt;();</span>
+		
+<span class="pc bpc" id="L740" title="1 of 2 branches missed.">		if (statuses != null) {</span>
+<span class="fc bfc" id="L741" title="All 2 branches covered.">			for (String status : statuses) {</span>
+<span class="fc" id="L742">				rt.add(status.toLowerCase(Locale.getDefault()));</span>
+<span class="fc" id="L743">			}</span>
+		}
+		
+<span class="fc" id="L746">		return rt;</span>
+	}
+	
+	private void updateStatuses() {
+<span class="fc" id="L750">		Map&lt;String, String&gt; statusMap = jiraClient.getStatusMapping();</span>
+<span class="pc bpc" id="L751" title="1 of 2 branches missed.">		for (String status : statusMap.keySet()) {</span>
+<span class="nc" id="L752">			String statusCategory = statusMap.get(status);</span>
+<span class="nc bnc" id="L753" title="All 2 branches missed.">			if (TO_DO.equals(statusCategory)) {</span>
+<span class="nc" id="L754">				todoCache.add(status.toLowerCase(Locale.getDefault()));</span>
+<span class="nc bnc" id="L755" title="All 2 branches missed.">			} else if (IN_PROGRESS.equals(statusCategory)) {</span>
+<span class="nc" id="L756">				inProgressCache.add(status.toLowerCase(Locale.getDefault()));</span>
+<span class="nc bnc" id="L757" title="All 2 branches missed.">			} else if (DONE.equals(statusCategory)) {</span>
+<span class="nc" id="L758">				doneCache.add(status.toLowerCase(Locale.getDefault()));</span>
+			}
+<span class="nc" id="L760">		}</span>
+<span class="fc" id="L761">	}</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.6.201602180812</span></div></body></html>

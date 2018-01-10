@@ -1,0 +1,13 @@
+GROUP,PACKAGE,CLASS,INSTRUCTION_MISSED,INSTRUCTION_COVERED,BRANCH_MISSED,BRANCH_COVERED,LINE_MISSED,LINE_COVERED,COMPLEXITY_MISSED,COMPLEXITY_COVERED,METHOD_MISSED,METHOD_COVERED
+com.capitalone.dashboard:github-graphql-scm-collector,com.capitalone.dashboard,Application,8,0,0,0,3,0,2,0,2,0
+com.capitalone.dashboard:github-graphql-scm-collector,com.capitalone.dashboard.collector,GitHubCollectorTask,297,516,20,28,52,97,28,19,11,12
+com.capitalone.dashboard:github-graphql-scm-collector,com.capitalone.dashboard.collector,DefaultGitHubClient,3101,0,309,0,604,0,201,0,41,0
+com.capitalone.dashboard:github-graphql-scm-collector,com.capitalone.dashboard.collector,RestOperationsSupplier,18,0,0,0,5,0,2,0,2,0
+com.capitalone.dashboard:github-graphql-scm-collector,com.capitalone.dashboard.collector,GitHubSettings,66,0,0,0,28,0,19,0,19,0
+com.capitalone.dashboard:github-graphql-scm-collector,com.capitalone.dashboard.collector,DefaultGitHubClient.new Object() {...},89,0,0,0,1,0,1,0,1,0
+com.capitalone.dashboard:github-graphql-scm-collector,com.capitalone.dashboard.model,GitHubRepo,16,62,4,6,4,12,6,8,2,7
+com.capitalone.dashboard:github-graphql-scm-collector,com.capitalone.dashboard.model,GitHubParsed,149,0,6,0,26,0,10,0,7,0
+com.capitalone.dashboard:github-graphql-scm-collector,com.capitalone.dashboard.model,GitHubGraphQLQuery,3,0,0,0,1,0,1,0,1,0
+com.capitalone.dashboard:github-graphql-scm-collector,com.capitalone.dashboard.model,GitHubRateLimit,14,10,0,0,6,4,4,3,4,3
+com.capitalone.dashboard:github-graphql-scm-collector,com.capitalone.dashboard.model,CollectionMode,138,0,0,0,13,0,4,0,4,0
+com.capitalone.dashboard:github-graphql-scm-collector,com.capitalone.dashboard.model,GitHubPaging,31,0,0,0,13,0,9,0,9,0

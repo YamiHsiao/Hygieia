@@ -1,0 +1,4 @@
+-------------------------------------------------------------------------------
+Test set: com.capitalone.dashboard.auth.DefaultSecurityTest
+-------------------------------------------------------------------------------
+Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 3.744 sec - in com.capitalone.dashboard.auth.DefaultSecurityTest

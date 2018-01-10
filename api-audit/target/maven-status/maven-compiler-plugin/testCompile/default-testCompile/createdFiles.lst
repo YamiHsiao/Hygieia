@@ -1,0 +1,3 @@
+com\capitalone\dashboard\config\TestConfig.class
+com\capitalone\dashboard\rest\AuditControllerTest.class
+com\capitalone\dashboard\service\AuditServiceTest.class

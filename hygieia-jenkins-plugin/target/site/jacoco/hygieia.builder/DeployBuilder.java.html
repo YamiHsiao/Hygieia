@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="zh"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>DeployBuilder.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Hygieia Publisher Plugin</a> &gt; <a href="index.source.html" class="el_package">hygieia.builder</a> &gt; <span class="el_source">DeployBuilder.java</span></div><h1>DeployBuilder.java</h1><pre class="source lang-java linenums">package hygieia.builder;
+
+import com.capitalone.dashboard.model.BuildStatus;
+import com.capitalone.dashboard.request.BuildDataCreateRequest;
+import com.capitalone.dashboard.request.DeployDataCreateRequest;
+import hudson.EnvVars;
+import hudson.FilePath;
+import hudson.model.AbstractBuild;
+import hudson.model.Run;
+import hudson.model.TaskListener;
+import hygieia.utils.HygieiaUtils;
+import jenkins.plugins.hygieia.HygieiaPublisher;
+import jenkins.plugins.hygieia.workflow.HygieiaDeployPublishStep;
+import org.jenkinsci.plugins.workflow.job.WorkflowRun;
+
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.logging.Logger;
+
+import org.apache.commons.io.FilenameUtils;
+
+public class DeployBuilder {
+
+<span class="nc" id="L27">    private static final Logger logger = Logger.getLogger(DeployBuilder.class.getName());</span>
+    private AbstractBuild build;
+    private Run run;
+    private TaskListener listener;
+    private String buildId;
+    private String jenkinsName;
+    private BuildStatus result;
+
+    private  String artifactName;
+//    private  String artifactDirectory;
+    private  String artifactGroup;
+    private  String artifactVersion;
+    private  String applicationName;
+    private  String environmentName;
+    private FilePath rootDirectory;
+    private BuildDataCreateRequest buildDataCreateRequest;
+
+
+<span class="nc" id="L45">    private Set&lt;DeployDataCreateRequest&gt; deploys = new HashSet&lt;&gt;();</span>
+
+<span class="nc" id="L47">    public DeployBuilder(AbstractBuild build, HygieiaPublisher publisher, TaskListener listener, String buildId) {</span>
+        //fixme: Need to settle on run vs build dual
+<span class="nc" id="L49">        this.build = build;</span>
+<span class="nc" id="L50">        this.run = build;</span>
+<span class="nc" id="L51">        final HygieiaPublisher.HygieiaDeploy hygieiaDeploy = publisher.getHygieiaDeploy();</span>
+<span class="nc" id="L52">        this.artifactGroup = hygieiaDeploy.getArtifactGroup().trim();</span>
+<span class="nc" id="L53">        this.artifactName = hygieiaDeploy.getArtifactName().trim();</span>
+<span class="nc" id="L54">        this.artifactVersion = hygieiaDeploy.getArtifactVersion().trim();</span>
+<span class="nc" id="L55">        this.applicationName = hygieiaDeploy.getApplicationName().trim();</span>
+<span class="nc" id="L56">        this.environmentName = hygieiaDeploy.getEnvironmentName().trim();</span>
+<span class="nc" id="L57">        this.buildId = buildId;</span>
+<span class="nc" id="L58">        this.listener = listener;</span>
+<span class="nc" id="L59">        rootDirectory = new FilePath(build.getWorkspace(), hygieiaDeploy.getArtifactDirectory().trim());</span>
+<span class="nc" id="L60">        this.jenkinsName = publisher.getDescriptor().getHygieiaJenkinsName();</span>
+<span class="nc" id="L61">        buildDeployRequests();</span>
+<span class="nc" id="L62">    }</span>
+
+<span class="nc" id="L64">    public DeployBuilder(Run run, String jenkinsName, HygieiaDeployPublishStep publisher, FilePath filePath, TaskListener listener, String buildId, BuildStatus result) {</span>
+<span class="nc" id="L65">        this.run = run;</span>
+<span class="nc" id="L66">        this.artifactGroup = publisher.getArtifactGroup().trim();</span>
+<span class="nc" id="L67">        this.artifactName = publisher.getArtifactName().trim();</span>
+<span class="nc" id="L68">        this.artifactVersion = publisher.getArtifactVersion().trim();</span>
+<span class="nc" id="L69">        this.applicationName = publisher.getApplicationName().trim();</span>
+<span class="nc" id="L70">        this.environmentName = publisher.getEnvironmentName().trim();</span>
+<span class="nc" id="L71">        this.buildId = buildId;</span>
+<span class="nc" id="L72">        this.listener = listener;</span>
+<span class="nc" id="L73">        rootDirectory = new FilePath(filePath, publisher.getArtifactDirectory().trim());</span>
+<span class="nc" id="L74">        this.jenkinsName = jenkinsName;</span>
+<span class="nc" id="L75">        this.result = result;</span>
+<span class="nc" id="L76">        buildDeployRequests();</span>
+
+<span class="nc" id="L78">    }</span>
+
+    private void buildDeployRequests() {
+<span class="nc" id="L81">        EnvVars envVars = null;</span>
+        try {
+<span class="nc" id="L83">            envVars = run.getEnvironment(listener);</span>
+<span class="nc" id="L84">            artifactVersion = envVars.expand(artifactVersion);</span>
+<span class="nc" id="L85">            artifactGroup = envVars.expand(artifactGroup);</span>
+<span class="nc" id="L86">            artifactName = envVars.expand(artifactName);</span>
+<span class="nc" id="L87">            environmentName = envVars.expand(environmentName);</span>
+<span class="nc" id="L88">            applicationName = envVars.expand(applicationName);</span>
+<span class="nc" id="L89">        } catch (IOException e) {</span>
+<span class="nc" id="L90">            listener.getLogger().println(&quot;Hygieia BuildArtifact Publisher - IOException getting EnvVars&quot;);</span>
+<span class="nc" id="L91">        } catch (InterruptedException e) {</span>
+<span class="nc" id="L92">            listener.getLogger().println(&quot;Hygieia BuildArtifact Publisher - IOException getting EnvVars&quot;);</span>
+<span class="nc" id="L93">        }</span>
+
+<span class="nc" id="L95">        listener.getLogger().println(&quot;Hygieia Deployment Publisher - Looking for file pattern '&quot; + artifactName + &quot;' in directory &quot; + rootDirectory);</span>
+        try {
+<span class="nc" id="L97">            List&lt;FilePath&gt; artifactFiles = HygieiaUtils.getArtifactFiles(rootDirectory, artifactName, new ArrayList&lt;FilePath&gt;());</span>
+<span class="nc bnc" id="L98" title="All 2 branches missed.">            for (FilePath f : artifactFiles) {</span>
+<span class="nc" id="L99">                listener.getLogger().println(&quot;Hygieia Deployment Publisher: Processing  file: &quot; + f.getRemote());</span>
+<span class="nc" id="L100">                DeployDataCreateRequest bac = new DeployDataCreateRequest();</span>
+<span class="nc bnc" id="L101" title="All 2 branches missed.">                if (&quot;&quot;.equals(artifactVersion)) {</span>
+<span class="nc" id="L102">                    artifactVersion = HygieiaUtils.guessVersionNumber(f.getName());</span>
+                }
+              
+<span class="nc" id="L105">                String artifactName = HygieiaUtils.getFileNameMinusVersion(f, artifactVersion);</span>
+                
+<span class="nc" id="L107">                bac.setArtifactVersion(artifactVersion);</span>
+<span class="nc" id="L108">                bac.setArtifactName(artifactName);</span>
+                
+                BuildBuilder buildBuilder;
+
+<span class="nc bnc" id="L112" title="All 2 branches missed.">                if (run instanceof WorkflowRun) {</span>
+<span class="nc" id="L113">                    buildBuilder = new BuildBuilder(run, jenkinsName, listener, result, false);</span>
+
+                } else {
+<span class="nc" id="L116">                    buildBuilder = new BuildBuilder((AbstractBuild) run, jenkinsName, listener, true, false);</span>
+                }
+
+<span class="nc" id="L119">                buildDataCreateRequest = buildBuilder.getBuildData();</span>
+
+<span class="nc" id="L121">                bac.setDeployStatus(buildDataCreateRequest.getBuildStatus());</span>
+<span class="nc" id="L122">                bac.setDuration(buildDataCreateRequest.getDuration());</span>
+<span class="nc" id="L123">                bac.setEndTime(buildDataCreateRequest.getEndTime());</span>
+<span class="nc" id="L124">                bac.setStartTime(buildDataCreateRequest.getStartTime());</span>
+<span class="nc" id="L125">                bac.setExecutionId(buildDataCreateRequest.getNumber());</span>
+<span class="nc" id="L126">                bac.setHygieiaId(buildId);</span>
+<span class="nc" id="L127">                bac.setAppName(applicationName);</span>
+<span class="nc" id="L128">                bac.setEnvName(environmentName);</span>
+<span class="nc" id="L129">                bac.setJobName(buildDataCreateRequest.getJobName());</span>
+<span class="nc" id="L130">                bac.setJobUrl(buildDataCreateRequest.getJobUrl());</span>
+<span class="nc" id="L131">                bac.setNiceName(jenkinsName);</span>
+<span class="nc" id="L132">                bac.setInstanceUrl(buildDataCreateRequest.getInstanceUrl());</span>
+<span class="nc" id="L133">                deploys.add(bac);</span>
+<span class="nc" id="L134">            }</span>
+<span class="nc" id="L135">        } catch (IOException e) {</span>
+<span class="nc" id="L136">            listener.getLogger().println(&quot;Hygieia BuildArtifact Publisher - IOException on &quot; + rootDirectory);</span>
+<span class="nc" id="L137">        } catch (InterruptedException e) {</span>
+<span class="nc" id="L138">            listener.getLogger().println(&quot;Hygieia BuildArtifact Publisher - InterruptedException on &quot; + rootDirectory);</span>
+<span class="nc" id="L139">        }</span>
+<span class="nc" id="L140">    }</span>
+
+
+    public Set&lt;DeployDataCreateRequest&gt; getDeploys() {
+<span class="nc" id="L144">        return deploys;</span>
+    }
+
+    public BuildDataCreateRequest getBuildDataCreateRequest() {
+<span class="nc" id="L148">        return buildDataCreateRequest;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.0.201801022044</span></div></body></html>

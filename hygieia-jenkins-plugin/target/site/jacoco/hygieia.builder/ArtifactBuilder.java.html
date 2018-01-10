@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="zh"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ArtifactBuilder.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Hygieia Publisher Plugin</a> &gt; <a href="index.source.html" class="el_package">hygieia.builder</a> &gt; <span class="el_source">ArtifactBuilder.java</span></div><h1>ArtifactBuilder.java</h1><pre class="source lang-java linenums">package hygieia.builder;
+
+import com.capitalone.dashboard.request.BinaryArtifactCreateRequest;
+import hudson.EnvVars;
+import hudson.FilePath;
+import hudson.model.AbstractBuild;
+import hudson.model.Run;
+import hudson.model.TaskListener;
+import hudson.scm.ChangeLogSet;
+import hygieia.utils.HygieiaUtils;
+import jenkins.plugins.hygieia.HygieiaPublisher;
+import jenkins.plugins.hygieia.workflow.HygieiaArtifactPublishStep;
+import org.jenkinsci.plugins.workflow.job.WorkflowRun;
+
+import java.io.IOException;
+import java.util.*;
+import java.util.logging.Logger;
+
+import org.apache.commons.io.FilenameUtils;
+import static hygieia.utils.HygieiaUtils.getEnvironment;
+
+
+public class ArtifactBuilder {
+
+<span class="nc" id="L25">    private static final Logger logger = Logger.getLogger(ArtifactBuilder.class.getName());</span>
+    private Run&lt;?, ?&gt; run;
+    private TaskListener listener;
+    private String hygieiaBuildId;
+
+    private String directory;
+    private String filePattern;
+    private String group;
+    private String version;
+    private FilePath rootDirectory;
+
+
+<span class="nc" id="L37">    private Set&lt;BinaryArtifactCreateRequest&gt; artifacts = new HashSet&lt;&gt;();</span>
+
+<span class="nc" id="L39">    public ArtifactBuilder(AbstractBuild&lt;?, ?&gt; build, HygieiaPublisher publisher, TaskListener listener, String hygieiaBuildId) {</span>
+        //fixme: Need to fix the run and build dual!
+<span class="nc" id="L41">        this.run = build;</span>
+<span class="nc" id="L42">        HygieiaPublisher.HygieiaArtifact hygieiaArtifact = publisher.getHygieiaArtifact();</span>
+<span class="nc" id="L43">        directory = hygieiaArtifact.getArtifactDirectory().trim();</span>
+<span class="nc" id="L44">        filePattern = hygieiaArtifact.getArtifactName().trim();</span>
+<span class="nc" id="L45">        group = hygieiaArtifact.getArtifactGroup().trim();</span>
+<span class="nc" id="L46">        version = hygieiaArtifact.getArtifactVersion().trim();</span>
+<span class="nc" id="L47">        this.hygieiaBuildId = hygieiaBuildId;</span>
+<span class="nc" id="L48">        this.listener = listener;</span>
+<span class="nc" id="L49">        this.rootDirectory = new FilePath(build.getWorkspace(), directory);</span>
+
+<span class="nc" id="L51">        buildArtifacts();</span>
+<span class="nc" id="L52">    }</span>
+
+<span class="nc" id="L54">    public ArtifactBuilder(Run&lt;?, ?&gt; run, FilePath filePath, HygieiaArtifactPublishStep publisher, TaskListener listener, String hygieiaBuildId) {</span>
+<span class="nc" id="L55">        this.run = run;</span>
+<span class="nc" id="L56">        directory = publisher.getArtifactDirectory().trim();</span>
+<span class="nc" id="L57">        filePattern = publisher.getArtifactName().trim();</span>
+<span class="nc" id="L58">        group = publisher.getArtifactGroup().trim();</span>
+<span class="nc" id="L59">        version = publisher.getArtifactVersion().trim();</span>
+<span class="nc" id="L60">        this.hygieiaBuildId = hygieiaBuildId;</span>
+<span class="nc" id="L61">        this.listener = listener;</span>
+<span class="nc" id="L62">        this.rootDirectory = new FilePath(filePath, directory);</span>
+<span class="nc" id="L63">        buildArtifacts();</span>
+<span class="nc" id="L64">    }</span>
+
+    private void buildArtifacts() {
+
+<span class="nc" id="L68">        List&lt;ChangeLogSet&lt;? extends ChangeLogSet.Entry&gt;&gt; changeLogSets = new ArrayList&lt;&gt;();</span>
+
+<span class="nc" id="L70">        EnvVars envVars = getEnvironment(run, listener);</span>
+<span class="nc bnc" id="L71" title="All 2 branches missed.">        if (envVars != null) {</span>
+<span class="nc" id="L72">            version = envVars.expand(version);</span>
+<span class="nc" id="L73">            group = envVars.expand(group);</span>
+<span class="nc" id="L74">            directory = envVars.expand(directory);</span>
+<span class="nc" id="L75">            filePattern = envVars.expand(filePattern);</span>
+        }
+
+
+<span class="nc" id="L79">        listener.getLogger().println(&quot;Hygieia Build Artifact Publisher - Looking for file pattern '&quot; + filePattern + &quot;' in directory &quot; + rootDirectory);</span>
+        try {
+<span class="nc" id="L81">            List&lt;FilePath&gt; artifactFiles = HygieiaUtils.getArtifactFiles(rootDirectory, filePattern, new ArrayList&lt;FilePath&gt;());</span>
+<span class="nc bnc" id="L82" title="All 2 branches missed.">            for (FilePath f : artifactFiles) {</span>
+<span class="nc" id="L83">                listener.getLogger().println(&quot;Hygieia Artifact Publisher: Processing  file: &quot; + f.getRemote());</span>
+<span class="nc" id="L84">                BinaryArtifactCreateRequest bac = new BinaryArtifactCreateRequest();</span>
+<span class="nc" id="L85">                bac.setArtifactGroup(group);</span>
+<span class="nc bnc" id="L86" title="All 2 branches missed.">                if (&quot;&quot;.equals(version)) {</span>
+<span class="nc" id="L87">                    version = HygieiaUtils.guessVersionNumber(f.getName());</span>
+                }
+<span class="nc" id="L89">                String artifactName = HygieiaUtils.determineArtifactName(f, version);</span>
+                
+<span class="nc" id="L91">                bac.setArtifactVersion(version);</span>
+<span class="nc" id="L92">                bac.setCanonicalName(f.getName());</span>
+
+<span class="nc" id="L94">                bac.setArtifactName(artifactName);</span>
+<span class="nc" id="L95">                bac.setArtifactModule(artifactName); // for now assume maven artifact</span>
+<span class="nc" id="L96">                bac.setArtifactExtension(FilenameUtils.getExtension(f.getName()));</span>
+<span class="nc" id="L97">                bac.setTimestamp(run.getTimeInMillis());</span>
+<span class="nc" id="L98">                bac.setBuildId(hygieiaBuildId);</span>
+
+<span class="nc bnc" id="L100" title="All 2 branches missed.">                if (run instanceof WorkflowRun) {</span>
+<span class="nc" id="L101">                    changeLogSets = ((WorkflowRun) run).getChangeSets();</span>
+<span class="nc bnc" id="L102" title="All 2 branches missed.">                } else if (run instanceof AbstractBuild) {</span>
+<span class="nc" id="L103">                    ChangeLogSet&lt;? extends ChangeLogSet.Entry&gt; sets = ((AbstractBuild) run).getChangeSet();</span>
+<span class="nc bnc" id="L104" title="All 2 branches missed.">                    changeLogSets = sets.isEmptySet() ? Collections.&lt;ChangeLogSet&lt;? extends ChangeLogSet.Entry&gt;&gt;emptyList() : Collections.&lt;ChangeLogSet&lt;? extends ChangeLogSet.Entry&gt;&gt;singletonList(sets);</span>
+                }
+<span class="nc" id="L106">                CommitBuilder commitBuilder = new CommitBuilder(changeLogSets);</span>
+
+<span class="nc" id="L108">                bac.getSourceChangeSet().addAll(commitBuilder.getCommits());</span>
+
+<span class="nc" id="L110">                bac.getMetadata().put(&quot;buildUrl&quot;, HygieiaUtils.getBuildUrl(run));</span>
+<span class="nc" id="L111">                bac.getMetadata().put(&quot;buildNumber&quot;, HygieiaUtils.getBuildNumber(run));</span>
+<span class="nc" id="L112">                bac.getMetadata().put(&quot;jobUrl&quot;, HygieiaUtils.getJobUrl(run));</span>
+<span class="nc" id="L113">                bac.getMetadata().put(&quot;jobName&quot;, HygieiaUtils.getJobName(run));</span>
+<span class="nc" id="L114">                bac.getMetadata().put(&quot;instanceUrl&quot;, HygieiaUtils.getInstanceUrl(run, listener));</span>
+
+
+<span class="nc bnc" id="L117" title="All 2 branches missed.">                if (run instanceof AbstractBuild) {</span>
+<span class="nc" id="L118">                    AbstractBuild abstractBuild = (AbstractBuild) run;</span>
+<span class="nc" id="L119">                    String scmUrl = HygieiaUtils.getScmUrl(abstractBuild, listener);</span>
+<span class="nc" id="L120">                    String scmBranch = HygieiaUtils.getScmBranch(abstractBuild, listener);</span>
+<span class="nc" id="L121">                    String scmRevisionNumber = HygieiaUtils.getScmRevisionNumber(abstractBuild, listener);</span>
+
+<span class="nc bnc" id="L123" title="All 2 branches missed.">                    if (scmUrl != null) {</span>
+<span class="nc" id="L124">                        bac.getMetadata().put(&quot;scmUrl&quot;, scmUrl);</span>
+                    }
+<span class="nc bnc" id="L126" title="All 2 branches missed.">                    if (scmBranch != null) {</span>
+<span class="nc bnc" id="L127" title="All 2 branches missed.">                        if (scmBranch.startsWith(&quot;origin/&quot;)) {</span>
+<span class="nc" id="L128">                            scmBranch = scmBranch.substring(7);</span>
+                        }
+<span class="nc" id="L130">                        bac.getMetadata().put(&quot;scmBranch&quot;, scmBranch);</span>
+                    }
+<span class="nc bnc" id="L132" title="All 2 branches missed.">                    if (scmRevisionNumber != null) {</span>
+<span class="nc" id="L133">                        bac.getMetadata().put(&quot;scmRevisionNumber&quot;, scmRevisionNumber);</span>
+                    }
+                }
+
+<span class="nc" id="L137">                artifacts.add(bac);</span>
+<span class="nc" id="L138">            }</span>
+<span class="nc" id="L139">        } catch (IOException e) {</span>
+<span class="nc" id="L140">            listener.getLogger().println(&quot;Hygieia BuildArtifact Publisher - IOException on &quot; + rootDirectory);</span>
+<span class="nc" id="L141">        } catch (InterruptedException e) {</span>
+<span class="nc" id="L142">            listener.getLogger().println(&quot;Hygieia BuildArtifact Publisher - InterruptedException on &quot; + rootDirectory);</span>
+<span class="nc" id="L143">        }</span>
+<span class="nc" id="L144">    }</span>
+
+    public Set&lt;BinaryArtifactCreateRequest&gt; getArtifacts() {
+<span class="nc" id="L147">        return artifacts;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.0.201801022044</span></div></body></html>

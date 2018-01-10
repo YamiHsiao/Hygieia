@@ -1,0 +1,234 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="zh"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>CustomRepositoryQueryImpl.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">com.capitalone.dashboard:core</a> &gt; <a href="index.source.html" class="el_package">com.capitalone.dashboard.repository</a> &gt; <span class="el_source">CustomRepositoryQueryImpl.java</span></div><h1>CustomRepositoryQueryImpl.java</h1><pre class="source lang-java linenums">package com.capitalone.dashboard.repository;
+
+
+import com.capitalone.dashboard.model.Collector;
+import com.capitalone.dashboard.model.CollectorItem;
+import com.capitalone.dashboard.model.CollectorType;
+import com.capitalone.dashboard.model.Commit;
+import com.capitalone.dashboard.model.GitRequest;
+import com.capitalone.dashboard.model.TestResult;
+import com.capitalone.dashboard.model.TestSuiteType;
+
+
+import com.capitalone.dashboard.util.GitHubParsedUrl;
+import org.apache.commons.collections.CollectionUtils;
+import org.bson.types.ObjectId;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.stereotype.Component;
+
+import java.util.List;
+import java.util.Map;
+import java.util.regex.Pattern;
+
+@Component
+public class CustomRepositoryQueryImpl implements CustomRepositoryQuery {
+
+    private final MongoTemplate template;
+    private static final String REGEX_ANY_STRING_INCLUDING_EMPTY = &quot;^$|^.*&quot;;
+
+    @Autowired
+<span class="nc" id="L34">    public CustomRepositoryQueryImpl(MongoTemplate template) {</span>
+<span class="nc" id="L35">        this.template = template;</span>
+<span class="nc" id="L36">    }</span>
+
+
+    @Override
+    public List&lt;CollectorItem&gt; findCollectorItemsBySubsetOptions(ObjectId id, Map&lt;String, Object&gt; allOptions, Map&lt;String, Object&gt; selectOptions) {
+<span class="nc" id="L41">        Criteria c = Criteria.where(&quot;collectorId&quot;).is(id);</span>
+
+<span class="nc bnc" id="L43" title="All 2 branches missed.">        for (Map.Entry&lt;String, Object&gt; e : allOptions.entrySet()) {</span>
+<span class="nc bnc" id="L44" title="All 2 branches missed.">            if (selectOptions.containsKey(e.getKey())) {</span>
+<span class="nc" id="L45">                c = getCriteria(selectOptions, c, e);</span>
+            } else {
+<span class="nc bnc" id="L47" title="All 22 branches missed.">                switch (e.getValue().getClass().getSimpleName()) {</span>
+                    case &quot;String&quot;:
+<span class="nc" id="L49">                        c = c.and(&quot;options.&quot; + e.getKey()).regex(REGEX_ANY_STRING_INCLUDING_EMPTY);</span>
+<span class="nc" id="L50">                        break;</span>
+
+                    case &quot;Integer&quot;:
+<span class="nc" id="L53">                        c = c.and(&quot;options.&quot; + e.getKey()).is(0);</span>
+<span class="nc" id="L54">                        break;</span>
+
+                    case &quot;Long&quot;:
+<span class="nc" id="L57">                        c = c.and(&quot;options.&quot; + e.getKey()).is(0);</span>
+<span class="nc" id="L58">                        break;</span>
+
+                    case &quot;Double&quot;:
+<span class="nc" id="L61">                        c = c.and(&quot;options.&quot; + e.getKey()).is(0.0);</span>
+<span class="nc" id="L62">                        break;</span>
+
+                    case &quot;Boolean&quot;:
+<span class="nc" id="L65">                        c = c.and(&quot;options.&quot; + e.getKey()).exists(true);</span>
+<span class="nc" id="L66">                        break;</span>
+
+                    default:
+<span class="nc" id="L69">                        c = c.and(&quot;options.&quot; + e.getKey()).exists(true);</span>
+                        break;
+                }
+            }
+<span class="nc" id="L73">        }</span>
+
+<span class="nc" id="L75">        List&lt;CollectorItem&gt; items =  template.find(new Query(c), CollectorItem.class);</span>
+<span class="nc bnc" id="L76" title="All 2 branches missed.">        if (CollectionUtils.isEmpty(items)) {</span>
+<span class="nc" id="L77">            items = findCollectorItemsBySubsetOptionsWithNullCheck(id, allOptions, selectOptions);</span>
+        }
+<span class="nc" id="L79">        return items;</span>
+    }
+
+    //Due toe limitation of the query class, we have to create a second query to see if optional fields are null. This still does not handle combination of
+    // initialized and null fields. Still better.
+    //TODO: This needs to be re-thought out.
+    public List&lt;CollectorItem&gt; findCollectorItemsBySubsetOptionsWithNullCheck(ObjectId id, Map&lt;String, Object&gt; allOptions, Map&lt;String, Object&gt; selectOptions) {
+<span class="nc" id="L86">        Criteria c = Criteria.where(&quot;collectorId&quot;).is(id);</span>
+
+<span class="nc bnc" id="L88" title="All 2 branches missed.">        for (Map.Entry&lt;String, Object&gt; e : allOptions.entrySet()) {</span>
+<span class="nc bnc" id="L89" title="All 2 branches missed.">            if (selectOptions.containsKey(e.getKey())) {</span>
+<span class="nc" id="L90">                c = getCriteria(selectOptions, c, e);</span>
+            } else {
+<span class="nc bnc" id="L92" title="All 22 branches missed.">                switch (e.getValue().getClass().getSimpleName()) {</span>
+                    case &quot;String&quot;:
+<span class="nc" id="L94">                        c = c.and(&quot;options.&quot; + e.getKey()).is(null);</span>
+<span class="nc" id="L95">                        break;</span>
+
+                    case &quot;Integer&quot;:
+<span class="nc" id="L98">                        c = c.and(&quot;options.&quot; + e.getKey()).is(null);</span>
+<span class="nc" id="L99">                        break;</span>
+
+                    case &quot;Long&quot;:
+<span class="nc" id="L102">                        c = c.and(&quot;options.&quot; + e.getKey()).is(null);</span>
+<span class="nc" id="L103">                        break;</span>
+
+                    case &quot;Double&quot;:
+<span class="nc" id="L106">                        c = c.and(&quot;options.&quot; + e.getKey()).is(null);</span>
+<span class="nc" id="L107">                        break;</span>
+
+                    case &quot;Boolean&quot;:
+<span class="nc" id="L110">                        c = c.and(&quot;options.&quot; + e.getKey()).is(null);</span>
+<span class="nc" id="L111">                        break;</span>
+
+                    default:
+<span class="nc" id="L114">                        c = c.and(&quot;options.&quot; + e.getKey()).is(null);</span>
+                        break;
+                }
+            }
+<span class="nc" id="L118">        }</span>
+
+<span class="nc" id="L120">        return template.find(new Query(c), CollectorItem.class);</span>
+    }
+
+    @Override
+    public List&lt;com.capitalone.dashboard.model.Component&gt; findComponents(Collector collector) {
+<span class="nc" id="L125">        Criteria c = Criteria.where(&quot;collectorItems.&quot; + collector.getCollectorType() + &quot;.collectorId&quot;).is(collector.getId());</span>
+<span class="nc" id="L126">        return template.find(new Query(c), com.capitalone.dashboard.model.Component.class);</span>
+    }
+
+    @Override
+    public List&lt;com.capitalone.dashboard.model.Component&gt; findComponents(CollectorType collectorType) {
+<span class="nc" id="L131">        Criteria c = Criteria.where(&quot;collectorItems.&quot; + collectorType).exists(true);</span>
+<span class="nc" id="L132">        return template.find(new Query(c), com.capitalone.dashboard.model.Component.class);</span>
+    }
+
+
+    @Override
+    public List&lt;com.capitalone.dashboard.model.Component&gt; findComponents(Collector collector, CollectorItem collectorItem) {
+<span class="nc" id="L138">        return findComponents(collector.getId(), collector.getCollectorType(), collectorItem.getId());</span>
+    }
+
+    @Override
+    public List&lt;com.capitalone.dashboard.model.Component&gt; findComponents(ObjectId collectorId, CollectorType collectorType, CollectorItem collectorItem) {
+<span class="nc" id="L143">        return findComponents(collectorId, collectorType, collectorItem.getId());</span>
+    }
+
+    @Override
+    public List&lt;com.capitalone.dashboard.model.Component&gt; findComponents(ObjectId collectorId, CollectorType collectorType, ObjectId collectorItemId) {
+<span class="nc" id="L148">        Criteria c = Criteria.where(&quot;collectorItems.&quot; + collectorType + &quot;._id&quot;).is(collectorItemId);</span>
+<span class="nc" id="L149">        return template.find(new Query(c), com.capitalone.dashboard.model.Component.class);</span>
+    }
+
+    @Override
+    public List&lt;Commit&gt; findByScmUrlAndScmBranchAndScmCommitTimestampGreaterThanEqualAndScmCommitTimestampLessThanEqual(String scmUrl, String scmBranch, long beginDt, long endDt) {
+<span class="nc" id="L154">        GitHubParsedUrl gitHubParsedUrl = new GitHubParsedUrl(scmUrl);</span>
+<span class="nc" id="L155">        String url = gitHubParsedUrl.getUrl();</span>
+<span class="nc" id="L156">        Query query = new Query(</span>
+<span class="nc" id="L157">                Criteria.where(&quot;scmUrl&quot;).regex(Pattern.compile(url,Pattern.CASE_INSENSITIVE))</span>
+<span class="nc" id="L158">                        .andOperator(</span>
+<span class="nc" id="L159">                                Criteria.where(&quot;scmBranch&quot;).regex(Pattern.compile(scmBranch,Pattern.CASE_INSENSITIVE)),</span>
+<span class="nc" id="L160">                                Criteria.where(&quot;scmCommitTimestamp&quot;).gte(beginDt),</span>
+<span class="nc" id="L161">                                Criteria.where(&quot;scmCommitTimestamp&quot;).lte(endDt)</span>
+                        )
+        );
+<span class="nc" id="L164">        query.with(new Sort(Sort.Direction.DESC, &quot;scmCommitTimestamp&quot;));</span>
+<span class="nc" id="L165">        return template.find(query, Commit.class);</span>
+    }
+
+    @Override
+    public List&lt;GitRequest&gt; findByScmUrlIgnoreCaseAndScmBranchIgnoreCaseAndMergedAtGreaterThanEqualAndMergedAtLessThanEqual(String scmUrl, String scmBranch, long beginDt, long endDt) {
+<span class="nc" id="L170">        GitHubParsedUrl gitHubParsedUrl = new GitHubParsedUrl(scmUrl);</span>
+<span class="nc" id="L171">        String url = gitHubParsedUrl.getUrl();</span>
+<span class="nc" id="L172">        Query query = new Query(</span>
+<span class="nc" id="L173">                Criteria.where(&quot;scmUrl&quot;).regex(Pattern.compile(url,Pattern.CASE_INSENSITIVE))</span>
+<span class="nc" id="L174">                        .andOperator(</span>
+<span class="nc" id="L175">                                Criteria.where(&quot;scmBranch&quot;).regex(Pattern.compile(scmBranch,Pattern.CASE_INSENSITIVE)),</span>
+<span class="nc" id="L176">                                Criteria.where(&quot;mergedAt&quot;).gte(beginDt),</span>
+<span class="nc" id="L177">                                Criteria.where(&quot;mergedAt&quot;).lte(endDt)</span>
+                        )
+        );
+<span class="nc" id="L180">        return template.find(query, GitRequest.class);</span>
+    }
+
+	@Override
+	public List&lt;TestResult&gt; findByUrlAndTimestampGreaterThanEqualAndTimestampLessThanEqual(String jobUrl, long beginDt,long endDt) {
+<span class="nc" id="L185">		Query query = new Query(</span>
+<span class="nc" id="L186">                Criteria.where(&quot;url&quot;).is(jobUrl)</span>
+<span class="nc" id="L187">                        .andOperator(</span>
+<span class="nc" id="L188">                                Criteria.where(&quot;timestamp&quot;).gte(beginDt),</span>
+<span class="nc" id="L189">                                Criteria.where(&quot;timestamp&quot;).lte(endDt)</span>
+                        )
+        );
+<span class="nc" id="L192">        return template.find(query, TestResult.class);</span>
+
+	}
+
+
+	public List&lt;TestResult&gt; findByCollectorItemIdAndTimestampGreaterThanEqualAndTimestampLessThanEqual(ObjectId collectorItemId, long beginTime, long endTime){
+
+<span class="nc" id="L199">        Query query = new Query(</span>
+<span class="nc" id="L200">                Criteria.where((&quot;collectorItemId&quot;)).is(collectorItemId)</span>
+<span class="nc" id="L201">                        .andOperator(</span>
+<span class="nc" id="L202">                                Criteria.where(&quot;timestamp&quot;).gte(beginTime),</span>
+<span class="nc" id="L203">                                Criteria.where(&quot;timestamp&quot;).lte(endTime),</span>
+<span class="nc" id="L204">                                Criteria.where(&quot;type&quot;).is(TestSuiteType.Performance)</span>
+                        )
+        );
+<span class="nc" id="L207">        return template.find(query, TestResult.class);</span>
+    }
+
+	private String getGitHubParsedString(Map&lt;String, Object&gt; selectOptions, Map.Entry&lt;String, Object&gt; e) {
+<span class="nc" id="L211">        String url = (String)selectOptions.get(e.getKey());</span>
+<span class="nc" id="L212">        GitHubParsedUrl gitHubParsedUrl = new GitHubParsedUrl(url);</span>
+<span class="nc" id="L213">        String parsedUrl = gitHubParsedUrl.getUrl();</span>
+<span class="nc" id="L214">        return parsedUrl;</span>
+    }
+
+    private Criteria getCriteria(Map&lt;String, Object&gt; selectOptions, Criteria c, Map.Entry&lt;String, Object&gt; e) {
+<span class="nc" id="L218">        Criteria criteria = c;</span>
+<span class="nc bnc" id="L219" title="All 2 branches missed.">        if(&quot;url&quot;.equalsIgnoreCase(e.getKey())){</span>
+<span class="nc" id="L220">            String url = getGitHubParsedString(selectOptions, e);</span>
+<span class="nc" id="L221">            criteria = criteria.and(&quot;options.&quot; + e.getKey()).regex(Pattern.compile(url,Pattern.CASE_INSENSITIVE));</span>
+<span class="nc" id="L222">        }</span>
+<span class="nc bnc" id="L223" title="All 2 branches missed.">        else if(&quot;branch&quot;.equalsIgnoreCase(e.getKey())){</span>
+<span class="nc" id="L224">            String branch = (String)selectOptions.get(e.getKey());</span>
+<span class="nc" id="L225">            criteria = criteria.and(&quot;options.&quot; + e.getKey()).regex(Pattern.compile(branch,Pattern.CASE_INSENSITIVE));</span>
+<span class="nc" id="L226">        }</span>
+        else {
+<span class="nc" id="L228">            criteria = criteria.and(&quot;options.&quot; + e.getKey()).is(selectOptions.get(e.getKey()));</span>
+        }
+<span class="nc" id="L230">        return criteria;</span>
+    }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.6.201602180812</span></div></body></html>

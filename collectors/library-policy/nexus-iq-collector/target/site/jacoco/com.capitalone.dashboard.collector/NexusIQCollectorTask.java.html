@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="zh"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>NexusIQCollectorTask.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">com.capitalone.dashboard:nexus-iq-collector</a> &gt; <a href="index.source.html" class="el_package">com.capitalone.dashboard.collector</a> &gt; <span class="el_source">NexusIQCollectorTask.java</span></div><h1>NexusIQCollectorTask.java</h1><pre class="source lang-java linenums">package com.capitalone.dashboard.collector;
+
+
+import com.capitalone.dashboard.model.CollectorItem;
+import com.capitalone.dashboard.model.CollectorType;
+import com.capitalone.dashboard.model.LibraryPolicyReport;
+import com.capitalone.dashboard.model.LibraryPolicyResult;
+import com.capitalone.dashboard.model.NexusIQApplication;
+import com.capitalone.dashboard.model.NexusIQCollector;
+import com.capitalone.dashboard.repository.BaseCollectorRepository;
+import com.capitalone.dashboard.repository.ComponentRepository;
+import com.capitalone.dashboard.repository.LibraryPolicyResultsRepository;
+import com.capitalone.dashboard.repository.NexusIQApplicationRepository;
+import com.capitalone.dashboard.repository.NexusIQCollectorRepository;
+import org.apache.commons.collections.CollectionUtils;
+import org.bson.types.ObjectId;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.scheduling.TaskScheduler;
+import org.springframework.stereotype.Component;
+
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
+
+@Component
+public class NexusIQCollectorTask extends CollectorTask&lt;NexusIQCollector&gt; {
+    private final NexusIQCollectorRepository nexusIQCollectorRepository;
+    private final NexusIQApplicationRepository nexusIQApplicationRepository;
+    private final LibraryPolicyResultsRepository libraryPolicyResultsRepository;
+    private final NexusIQClient nexusIQClient;
+    private final NexusIQSettings nexusIQSettings;
+    private final ComponentRepository dbComponentRepository;
+
+    @Autowired
+    public NexusIQCollectorTask(TaskScheduler taskScheduler,
+                                NexusIQCollectorRepository nexusIQCollectorRepository,
+                                NexusIQApplicationRepository nexusIQApplicationRepository,
+                                LibraryPolicyResultsRepository libraryPolicyResultsRepository,
+                                NexusIQSettings nexusIQSettings,
+                                NexusIQClient nexusIQClient,
+                                ComponentRepository dbComponentRepository) {
+<span class="nc" id="L44">        super(taskScheduler, &quot;NexusIQ&quot;);</span>
+<span class="nc" id="L45">        this.nexusIQCollectorRepository = nexusIQCollectorRepository;</span>
+<span class="nc" id="L46">        this.nexusIQApplicationRepository = nexusIQApplicationRepository;</span>
+<span class="nc" id="L47">        this.libraryPolicyResultsRepository = libraryPolicyResultsRepository;</span>
+<span class="nc" id="L48">        this.nexusIQSettings = nexusIQSettings;</span>
+<span class="nc" id="L49">        this.nexusIQClient = nexusIQClient;</span>
+<span class="nc" id="L50">        this.dbComponentRepository = dbComponentRepository;</span>
+<span class="nc" id="L51">    }</span>
+
+    @Override
+    public NexusIQCollector getCollector() {
+<span class="nc" id="L55">        return NexusIQCollector.prototype(nexusIQSettings.getServers());</span>
+    }
+
+    @Override
+    public BaseCollectorRepository&lt;NexusIQCollector&gt; getCollectorRepository() {
+<span class="nc" id="L60">        return nexusIQCollectorRepository;</span>
+    }
+
+    @Override
+    public String getCron() {
+<span class="nc" id="L65">        return nexusIQSettings.getCron();</span>
+    }
+
+    @Override
+    public void collect(NexusIQCollector collector) {
+<span class="nc" id="L70">        long start = System.currentTimeMillis();</span>
+
+<span class="nc" id="L72">        Set&lt;ObjectId&gt; udId = new HashSet&lt;&gt;();</span>
+<span class="nc" id="L73">        udId.add(collector.getId());</span>
+<span class="nc" id="L74">        List&lt;NexusIQApplication&gt; existingApplications = nexusIQApplicationRepository.findByCollectorIdIn(udId);</span>
+<span class="nc" id="L75">        List&lt;NexusIQApplication&gt; latestApplications = new ArrayList&lt;&gt;();</span>
+
+<span class="nc" id="L77">        clean(collector, existingApplications);</span>
+
+<span class="nc bnc" id="L79" title="All 2 branches missed.">        for (String instanceUrl : collector.getNexusIQServers()) {</span>
+<span class="nc" id="L80">            logBanner(instanceUrl);</span>
+
+<span class="nc" id="L82">            List&lt;NexusIQApplication&gt; applications = nexusIQClient.getApplications(instanceUrl);</span>
+<span class="nc" id="L83">            latestApplications.addAll(applications);</span>
+
+<span class="nc" id="L85">            log(&quot;Fetched projects   &quot; + applications.size(), start);</span>
+
+<span class="nc" id="L87">            addNewApplications(applications, existingApplications, collector);</span>
+
+<span class="nc" id="L89">            applications = enabledApplications(collector, instanceUrl);</span>
+
+//            For testing only.
+//            applications = getSavedApplcations(collector, instanceUrl);
+<span class="nc" id="L93">            refreshData(applications);</span>
+
+<span class="nc" id="L95">            log(&quot;Finished&quot;, start);</span>
+<span class="nc" id="L96">        }</span>
+<span class="nc" id="L97">        deleteUnwantedJobs(latestApplications, existingApplications, collector);</span>
+<span class="nc" id="L98">    }</span>
+
+    @SuppressWarnings(&quot;PMD.AvoidDeeplyNestedIfStmts&quot;) // agreed PMD, fixme
+    private void clean(NexusIQCollector collector, List&lt;NexusIQApplication&gt; nexusIQApplications) {
+<span class="nc" id="L102">        Set&lt;ObjectId&gt; uniqueIDs = new HashSet&lt;&gt;();</span>
+<span class="nc bnc" id="L103" title="All 2 branches missed.">        for (com.capitalone.dashboard.model.Component comp : dbComponentRepository</span>
+<span class="nc" id="L104">                .findAll()) {</span>
+<span class="nc bnc" id="L105" title="All 4 branches missed.">            if (comp.getCollectorItems() != null &amp;&amp; !comp.getCollectorItems().isEmpty()) {</span>
+<span class="nc" id="L106">                List&lt;CollectorItem&gt; itemList = comp.getCollectorItems().get(</span>
+                        CollectorType.LibraryPolicy);
+<span class="nc bnc" id="L108" title="All 2 branches missed.">                if (itemList != null) {</span>
+<span class="nc bnc" id="L109" title="All 2 branches missed.">                    for (CollectorItem ci : itemList) {</span>
+<span class="nc bnc" id="L110" title="All 4 branches missed.">                        if (ci != null &amp;&amp; ci.getCollectorId().equals(collector.getId())) {</span>
+<span class="nc" id="L111">                            uniqueIDs.add(ci.getId());</span>
+                        }
+<span class="nc" id="L113">                    }</span>
+                }
+            }
+<span class="nc" id="L116">        }</span>
+<span class="nc" id="L117">        List&lt;NexusIQApplication&gt; stateChangeAppList = new ArrayList&lt;&gt;();</span>
+<span class="nc" id="L118">        Set&lt;ObjectId&gt; udId = new HashSet&lt;&gt;();</span>
+<span class="nc" id="L119">        udId.add(collector.getId());</span>
+<span class="nc bnc" id="L120" title="All 2 branches missed.">        for (NexusIQApplication app : nexusIQApplications) {</span>
+            // collect the jobs that need to change state : enabled vs disabled.
+<span class="nc bnc" id="L122" title="All 4 branches missed.">            if ((app.isEnabled() &amp;&amp; !uniqueIDs.contains(app.getId())) ||  // if it was enabled but not on a dashboard</span>
+<span class="nc bnc" id="L123" title="All 4 branches missed.">                    (!app.isEnabled() &amp;&amp; uniqueIDs.contains(app.getId()))) { // OR it was disabled and now on a dashboard</span>
+<span class="nc" id="L124">                app.setEnabled(uniqueIDs.contains(app.getId()));</span>
+<span class="nc" id="L125">                stateChangeAppList.add(app);</span>
+            }
+<span class="nc" id="L127">        }</span>
+<span class="nc bnc" id="L128" title="All 2 branches missed.">        if (!CollectionUtils.isEmpty(stateChangeAppList)) {</span>
+<span class="nc" id="L129">            nexusIQApplicationRepository.save(stateChangeAppList);</span>
+        }
+<span class="nc" id="L131">    }</span>
+
+
+    private void deleteUnwantedJobs(List&lt;NexusIQApplication&gt; latestApplications, List&lt;NexusIQApplication&gt; existingApplications, NexusIQCollector collector) {
+<span class="nc" id="L135">        List&lt;NexusIQApplication&gt; deleteJobList = new ArrayList&lt;&gt;();</span>
+
+        // First delete collector items that are not supposed to be collected anymore because the servers have moved(?)
+<span class="nc bnc" id="L138" title="All 2 branches missed.">        for (NexusIQApplication application : existingApplications) {</span>
+<span class="nc bnc" id="L139" title="All 2 branches missed.">            if (application.isPushed()) continue; // do not delete jobs that are being pushed via API</span>
+<span class="nc bnc" id="L140" title="All 2 branches missed.">            if (!collector.getNexusIQServers().contains(application.getInstanceUrl()) ||</span>
+<span class="nc bnc" id="L141" title="All 2 branches missed.">                    (!application.getCollectorId().equals(collector.getId())) ||</span>
+<span class="nc bnc" id="L142" title="All 2 branches missed.">                    (!latestApplications.contains(application))) {</span>
+<span class="nc" id="L143">                deleteJobList.add(application);</span>
+            }
+<span class="nc" id="L145">        }</span>
+<span class="nc bnc" id="L146" title="All 2 branches missed.">        if (!CollectionUtils.isEmpty(deleteJobList)) {</span>
+<span class="nc" id="L147">            nexusIQApplicationRepository.delete(deleteJobList);</span>
+        }
+<span class="nc" id="L149">    }</span>
+
+    @SuppressWarnings({&quot;PMD.CollapsibleIfStatements&quot;,&quot;PMD.AvoidDeeplyNestedIfStmts&quot;})
+    private void refreshData(List&lt;NexusIQApplication&gt; applications) {
+<span class="nc" id="L153">        long start = System.currentTimeMillis();</span>
+<span class="nc" id="L154">        int count = 0;</span>
+<span class="nc bnc" id="L155" title="All 2 branches missed.">        for (NexusIQApplication app : applications) {</span>
+<span class="nc" id="L156">            List&lt;LibraryPolicyReport&gt; reports = nexusIQClient.getApplicationReport(app);</span>
+<span class="nc bnc" id="L157" title="All 2 branches missed.">            if (CollectionUtils.isEmpty(reports)) continue;</span>
+<span class="nc" id="L158">            boolean appUpdated = false;</span>
+<span class="nc bnc" id="L159" title="All 2 branches missed.">            for (LibraryPolicyReport report : reports) {</span>
+<span class="nc bnc" id="L160" title="All 2 branches missed.">                if (report.getStage().equalsIgnoreCase(&quot;build&quot;)) {</span>
+<span class="nc bnc" id="L161" title="All 2 branches missed.">                    if (isNewReport(app, report.getEvaluationDate())) {</span>
+
+<span class="nc" id="L163">                        LibraryPolicyResult lpr = nexusIQClient.getDetailedReport(report.getReportDataUrl());</span>
+
+<span class="nc bnc" id="L165" title="All 2 branches missed.">                        if (lpr == null) continue;</span>
+
+<span class="nc" id="L167">                        lpr.setCollectorItemId(app.getId());</span>
+<span class="nc" id="L168">                        lpr.setReportUrl(report.getReportUIUrl());</span>
+<span class="nc" id="L169">                        lpr.setEvaluationTimestamp(report.getEvaluationDate());</span>
+<span class="nc" id="L170">                        lpr.setTimestamp(System.currentTimeMillis());</span>
+<span class="nc" id="L171">                        libraryPolicyResultsRepository.save(lpr);</span>
+<span class="nc" id="L172">                        appUpdated = true;</span>
+<span class="nc" id="L173">                        count++;</span>
+                    }
+                }
+<span class="nc" id="L176">            }</span>
+<span class="nc bnc" id="L177" title="All 2 branches missed.">            if (appUpdated) {</span>
+<span class="nc" id="L178">                app.setLastUpdated(System.currentTimeMillis());</span>
+            }
+
+<span class="nc" id="L181">        }</span>
+<span class="nc" id="L182">        log(&quot;Updated&quot;, start, count);</span>
+<span class="nc" id="L183">    }</span>
+
+
+    private List&lt;NexusIQApplication&gt; enabledApplications(NexusIQCollector collector, String instanceUrl) {
+<span class="nc" id="L187">        return nexusIQApplicationRepository.findEnabledApplications(collector.getId(), instanceUrl);</span>
+    }
+
+//    private List&lt;NexusIQApplication&gt; getSavedApplcations(NexusIQCollector collector, String instanceUrl) {
+//        Iterable&lt;NexusIQApplication&gt; iterable = nexusIQApplicationRepository.findAll();
+//        List&lt;NexusIQApplication&gt; returnList = new ArrayList&lt;&gt;();
+//        iterable.forEach(returnList::add);
+//        return returnList;
+//    }
+
+    private void addNewApplications(List&lt;NexusIQApplication&gt; applications, List&lt;NexusIQApplication&gt; existingApplications, NexusIQCollector collector) {
+<span class="nc" id="L198">        long start = System.currentTimeMillis();</span>
+<span class="nc" id="L199">        int count = 0;</span>
+<span class="nc" id="L200">        List&lt;NexusIQApplication&gt; newApplications = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L201" title="All 2 branches missed.">        for (NexusIQApplication application : applications) {</span>
+<span class="nc bnc" id="L202" title="All 2 branches missed.">            if (!existingApplications.contains(application)) {</span>
+<span class="nc" id="L203">                application.setCollectorId(collector.getId());</span>
+<span class="nc" id="L204">                application.setEnabled(false);</span>
+<span class="nc" id="L205">                application.setLastUpdated(System.currentTimeMillis());</span>
+<span class="nc" id="L206">                newApplications.add(application);</span>
+<span class="nc" id="L207">                count++;</span>
+            }
+<span class="nc" id="L209">        }</span>
+        //save all in one shot
+<span class="nc bnc" id="L211" title="All 2 branches missed.">        if (!CollectionUtils.isEmpty(newApplications)) {</span>
+<span class="nc" id="L212">            nexusIQApplicationRepository.save(newApplications);</span>
+        }
+<span class="nc" id="L214">        log(&quot;New projects&quot;, start, count);</span>
+<span class="nc" id="L215">    }</span>
+
+    private boolean isNewReport(NexusIQApplication application, long newReportTime) {
+<span class="nc" id="L218">        LibraryPolicyResult oldResult = libraryPolicyResultsRepository.findByCollectorItemId(application.getId());</span>
+<span class="nc bnc" id="L219" title="All 4 branches missed.">        return (oldResult == null) ||  (oldResult.getEvaluationTimestamp() &lt; newReportTime);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.6.201602180812</span></div></body></html>

@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="zh"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>TeamDataClientImpl.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">com.capitalone.dashboard:jira-feature-collector</a> &gt; <a href="index.source.html" class="el_package">com.capitalone.dashboard.client.team</a> &gt; <span class="el_source">TeamDataClientImpl.java</span></div><h1>TeamDataClientImpl.java</h1><pre class="source lang-java linenums">package com.capitalone.dashboard.client.team;
+
+import com.capitalone.dashboard.client.JiraClient;
+import com.capitalone.dashboard.model.Team;
+import com.capitalone.dashboard.repository.FeatureCollectorRepository;
+import com.capitalone.dashboard.repository.TeamRepository;
+import com.capitalone.dashboard.util.FeatureCollectorConstants;
+import com.capitalone.dashboard.util.FeatureSettings;
+import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.lang.StringUtils;
+import org.bson.types.ObjectId;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * This is the primary implemented/extended data collector for the feature
+ * collector. This will get data from the source system, but will grab the
+ * majority of needed data and aggregate it in a single, flat MongoDB collection
+ * for consumption.
+ * 
+ * @author kfk884
+ * 
+ */
+public class TeamDataClientImpl implements TeamDataClient {
+<span class="fc" id="L28">	private static final Logger LOGGER = LoggerFactory.getLogger(TeamDataClientImpl.class);</span>
+
+	private final FeatureSettings featureSettings;
+	private final TeamRepository teamRepo;
+	private final FeatureCollectorRepository featureCollectorRepository;
+	private final JiraClient jiraClient;
+
+	/**
+	 * Extends the constructor from the super class.
+	 * 
+	 * @param teamRepository
+	 */
+	public TeamDataClientImpl(FeatureCollectorRepository featureCollectorRepository, FeatureSettings featureSettings,
+<span class="fc" id="L41">			TeamRepository teamRepository, JiraClient jiraClient) {</span>
+<span class="pc bpc" id="L42" title="1 of 2 branches missed.">		if (LOGGER.isDebugEnabled()) {</span>
+<span class="nc" id="L43">			LOGGER.debug(&quot;Constructing data collection for the feature widget, team-level data...&quot;);</span>
+		}
+
+<span class="fc" id="L46">		this.featureSettings = featureSettings;</span>
+<span class="fc" id="L47">		this.featureCollectorRepository = featureCollectorRepository;</span>
+<span class="fc" id="L48">		this.teamRepo = teamRepository;</span>
+<span class="fc" id="L49">		this.jiraClient = jiraClient;</span>
+<span class="fc" id="L50">	}</span>
+	
+	/**
+	 * Explicitly updates queries for the source system, and initiates the
+	 * update to MongoDB from those calls.
+	 */
+	public int updateTeamInformation() {
+<span class="fc" id="L57">		int count = 0;</span>
+
+<span class="fc" id="L59">		List&lt;Team&gt; teams = null;</span>
+<span class="fc" id="L60">		String jiraBoardAsTeam = featureSettings.getJiraBoardAsTeam();</span>
+<span class="pc bpc" id="L61" title="3 of 4 branches missed.">		if (!StringUtils.isEmpty(jiraBoardAsTeam) &amp;&amp; Boolean.parseBoolean(jiraBoardAsTeam)) {</span>
+<span class="nc" id="L62">			teams = jiraClient.getBoards(0, new ArrayList&lt;Team&gt;());</span>
+		} else {
+<span class="fc" id="L64">			teams = jiraClient.getTeams();</span>
+		}
+		
+<span class="pc bpc" id="L67" title="1 of 2 branches missed.">		if (CollectionUtils.isNotEmpty(teams)) {</span>
+<span class="fc" id="L68">			updateMongoInfo(teams);</span>
+<span class="fc" id="L69">			count += teams.size();</span>
+		}
+		
+<span class="fc" id="L72">		return count;</span>
+	}
+
+	/**
+	 * Updates the MongoDB with a JSONArray received from the source system
+	 * back-end with story-based data.
+	 * 
+	 * @param jiraTeams
+	 *            A list response of Jira teams from the source system
+	 */
+	private void updateMongoInfo(List&lt;Team&gt; jiraTeams) {
+<span class="fc" id="L83">		ObjectId jiraCollectorId = featureCollectorRepository.findByName(FeatureCollectorConstants.JIRA).getId();</span>
+		
+<span class="fc bfc" id="L85" title="All 2 branches covered.">		for (Team jiraTeam : jiraTeams) {</span>
+<span class="fc" id="L86">			String teamId = jiraTeam.getTeamId();</span>
+			
+			/*
+			 * Initialize DOMs
+			 */
+<span class="fc" id="L91">			Team team = teamRepo.findByTeamId(teamId);</span>
+
+<span class="pc bpc" id="L93" title="1 of 2 branches missed.">			if (team == null) {</span>
+<span class="fc" id="L94">				team = new Team(&quot;&quot;, &quot;&quot;);</span>
+			}
+
+			// collectorId
+<span class="fc" id="L98">			team.setCollectorId(jiraCollectorId);</span>
+
+			// teamId
+<span class="fc" id="L101">			team.setTeamId(teamId);</span>
+
+			// name
+<span class="fc" id="L104">			team.setName(jiraTeam.getName());</span>
+
+			// teamType
+<span class="fc" id="L107">			team.setTeamType(jiraTeam.getTeamType());</span>
+
+			// changeDate - does not exist for jira
+<span class="fc" id="L110">			team.setChangeDate(&quot;&quot;);</span>
+
+			// assetState - does not exist for jira
+<span class="fc" id="L113">			team.setAssetState(&quot;Active&quot;);</span>
+
+			// isDeleted - does not exist for jira
+<span class="fc" id="L116">			team.setIsDeleted(&quot;False&quot;);</span>
+
+			// Saving back to MongoDB
+<span class="fc" id="L119">			teamRepo.save(team);</span>
+<span class="fc" id="L120">		}</span>
+<span class="fc" id="L121">	}</span>
+
+	/**
+	 * Retrieves the maximum change date for a given query.
+	 *
+	 * @return A list object of the maximum change date
+	 */
+	public String getMaxChangeDate() {
+<span class="nc" id="L129">		String data = null;</span>
+
+		try {
+<span class="nc" id="L132">			List&lt;Team&gt; response = teamRepo.findTopByChangeDateDesc(</span>
+<span class="nc" id="L133">					featureCollectorRepository.findByName(FeatureCollectorConstants.JIRA).getId(),</span>
+<span class="nc" id="L134">					featureSettings.getDeltaCollectorItemStartDate());</span>
+<span class="nc bnc" id="L135" title="All 4 branches missed.">			if ((response != null) &amp;&amp; !response.isEmpty()) {</span>
+<span class="nc" id="L136">				data = response.get(0).getChangeDate();</span>
+			}
+<span class="nc" id="L138">		} catch (Exception e) {</span>
+<span class="nc" id="L139">			LOGGER.error(&quot;There was a problem retrieving or parsing data from the local &quot;</span>
+					+ &quot;repository while retrieving a max change date\nReturning null&quot;);
+<span class="nc" id="L141">		}</span>
+
+<span class="nc" id="L143">		return data;</span>
+	}
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.6.201602180812</span></div></body></html>

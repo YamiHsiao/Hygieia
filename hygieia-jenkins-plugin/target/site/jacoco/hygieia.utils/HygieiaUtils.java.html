@@ -1,0 +1,321 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="zh"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>HygieiaUtils.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Hygieia Publisher Plugin</a> &gt; <a href="index.source.html" class="el_package">hygieia.utils</a> &gt; <span class="el_source">HygieiaUtils.java</span></div><h1>HygieiaUtils.java</h1><pre class="source lang-java linenums">package hygieia.utils;
+
+import com.capitalone.dashboard.model.RepoBranch;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import hudson.EnvVars;
+import hudson.FilePath;
+import hudson.model.AbstractBuild;
+import hudson.model.BuildListener;
+import hudson.model.Run;
+import hudson.model.TaskListener;
+import hudson.plugins.git.GitSCM;
+import hudson.plugins.git.util.Build;
+import hudson.scm.SubversionSCM;
+import jenkins.plugins.hygieia.CustomObjectMapper;
+import org.apache.commons.io.FilenameUtils;
+import org.apache.commons.io.IOCase;
+import org.apache.commons.io.filefilter.WildcardFileFilter;
+import org.apache.commons.lang3.StringUtils;
+import org.jenkinsci.plugins.multiplescms.MultiSCM;
+import org.jenkinsci.plugins.workflow.job.WorkflowRun;
+import org.springframework.util.CollectionUtils;
+
+import java.io.FileFilter;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.logging.Logger;
+
+
+<span class="nc" id="L33">public class HygieiaUtils {</span>
+<span class="fc" id="L34">    private static final Logger logger = Logger.getLogger(HygieiaUtils.class.getName());</span>
+    public static final String APPLICATION_JSON_VALUE = &quot;application/json&quot;;
+
+    public static byte[] convertObjectToJsonBytes(Object object) throws IOException {
+<span class="fc" id="L38">        ObjectMapper mapper = new CustomObjectMapper();</span>
+<span class="fc" id="L39">        mapper.setSerializationInclusion(JsonInclude.Include.NON_NULL);</span>
+<span class="fc" id="L40">        return mapper.writeValueAsBytes(object);</span>
+    }
+
+    public static Object convertJsonToObject(String json, Class thisClass) throws IOException {
+<span class="nc" id="L44">        ObjectMapper mapper = new CustomObjectMapper();</span>
+<span class="nc" id="L45">        return mapper.readValue(json, thisClass);</span>
+    }
+
+    public static List&lt;FilePath&gt; getArtifactFiles(FilePath rootDirectory, String pattern, List&lt;FilePath&gt; results) throws IOException, InterruptedException {
+<span class="nc" id="L49">        FileFilter filter = new WildcardFileFilter(pattern.replace(&quot;**&quot;, &quot;*&quot;), IOCase.SYSTEM);</span>
+<span class="nc" id="L50">        List&lt;FilePath&gt; temp = rootDirectory.list(filter);</span>
+<span class="nc bnc" id="L51" title="All 2 branches missed.">        if (!CollectionUtils.isEmpty(temp)) {</span>
+<span class="nc" id="L52">            results.addAll(temp);</span>
+        }
+
+<span class="nc" id="L55">        temp = rootDirectory.list();</span>
+<span class="nc bnc" id="L56" title="All 2 branches missed.">        if (!CollectionUtils.isEmpty(temp)) {</span>
+<span class="nc bnc" id="L57" title="All 2 branches missed.">            for (FilePath currentItem : rootDirectory.list()) {</span>
+<span class="nc bnc" id="L58" title="All 2 branches missed.">                if (currentItem.isDirectory()) {</span>
+<span class="nc" id="L59">                    getArtifactFiles(currentItem, pattern, results);</span>
+                }
+<span class="nc" id="L61">            }</span>
+        }
+<span class="nc" id="L63">        return results;</span>
+    }
+    
+    /**
+     * Determine the artifact's name. The name excludes the version string and the file extension.
+     * 
+     * Does not currently support classifiers
+     * 
+     * @param file
+     * @param version
+     * @return
+     */
+    public static String determineArtifactName(FilePath file, String version) {
+<span class="nc" id="L76">    	String fileName = file.getBaseName();</span>
+    	
+<span class="nc bnc" id="L78" title="All 2 branches missed.">        if (&quot;&quot;.equals(version)) return fileName;</span>
+
+<span class="nc" id="L80">        int vIndex = fileName.indexOf(version);</span>
+<span class="nc bnc" id="L81" title="All 2 branches missed.">        if (vIndex &lt;= 0) return fileName;</span>
+<span class="nc bnc" id="L82" title="All 4 branches missed.">        if ((fileName.charAt(vIndex - 1) == '-') || (fileName.charAt(vIndex - 1) == '_')) {</span>
+<span class="nc" id="L83">            vIndex = vIndex - 1;</span>
+        }
+<span class="nc" id="L85">        return fileName.substring(0, vIndex);</span>
+    }
+
+    public static String getFileNameMinusVersion(FilePath file, String version) {
+<span class="nc" id="L89">        String ext = FilenameUtils.getExtension(file.getName());</span>
+<span class="nc bnc" id="L90" title="All 2 branches missed.">        if (&quot;&quot;.equals(version)) return file.getName();</span>
+
+<span class="nc" id="L92">        int vIndex = file.getName().indexOf(version);</span>
+<span class="nc bnc" id="L93" title="All 2 branches missed.">        if (vIndex &lt;= 0) return file.getName();</span>
+<span class="nc bnc" id="L94" title="All 4 branches missed.">        if ((file.getName().charAt(vIndex - 1) == '-') || (file.getName().charAt(vIndex - 1) == '_')) {</span>
+<span class="nc" id="L95">            vIndex = vIndex - 1;</span>
+        }
+<span class="nc" id="L97">        return file.getName().substring(0, vIndex) + &quot;.&quot; + ext;</span>
+    }
+
+    public static String guessVersionNumber(String source) {
+<span class="nc" id="L101">        String versionNumber = &quot;&quot;;</span>
+<span class="nc" id="L102">        String fileName = source.substring(0, source.lastIndexOf(&quot;.&quot;));</span>
+<span class="nc bnc" id="L103" title="All 2 branches missed.">        if (fileName.contains(&quot;.&quot;)) {</span>
+<span class="nc" id="L104">            String majorVersion = fileName.substring(0, fileName.indexOf(&quot;.&quot;));</span>
+<span class="nc" id="L105">            String minorVersion = fileName.substring(fileName.indexOf(&quot;.&quot;));</span>
+<span class="nc" id="L106">            int delimiter = majorVersion.lastIndexOf(&quot;-&quot;);</span>
+<span class="nc bnc" id="L107" title="All 2 branches missed.">            if (majorVersion.indexOf(&quot;_&quot;) &gt; delimiter) delimiter = majorVersion.indexOf(&quot;_&quot;);</span>
+<span class="nc" id="L108">            majorVersion = majorVersion.substring(delimiter + 1, fileName.indexOf(&quot;.&quot;));</span>
+<span class="nc" id="L109">            versionNumber = majorVersion + minorVersion;</span>
+        }
+<span class="nc" id="L111">        return versionNumber;</span>
+    }
+    
+    public static String getBuildUrl(AbstractBuild&lt;?, ?&gt; build) {
+<span class="nc" id="L115">    	return build.getProject().getAbsoluteUrl() + String.valueOf(build.getNumber()) + &quot;/&quot;;</span>
+    }
+
+    public static String getBuildUrl(Run&lt;?, ?&gt; run) {
+<span class="fc" id="L119">        return run.getParent().getAbsoluteUrl() + String.valueOf(run.getNumber()) + &quot;/&quot;;</span>
+    }
+
+    public static String getBuildNumber(AbstractBuild&lt;?, ?&gt; build) {
+<span class="nc" id="L123">    	return String.valueOf(build.getNumber());</span>
+    }
+
+    public static String getBuildNumber(Run&lt;?, ?&gt; run) {
+<span class="fc" id="L127">        return String.valueOf(run.getNumber());</span>
+    }
+
+    public static String getJobUrl(AbstractBuild&lt;?, ?&gt; build) {
+<span class="nc" id="L131">    	return build.getProject().getAbsoluteUrl();</span>
+    }
+
+    public static String getJobUrl(Run&lt;?, ?&gt; run) {
+<span class="fc" id="L135">        return run.getParent().getAbsoluteUrl();</span>
+    }
+
+    
+    public static String getJobName(AbstractBuild&lt;?, ?&gt; build) {
+<span class="nc" id="L140">    	return build.getProject().getName();</span>
+    }
+
+    public static String getJobName(Run&lt;?, ?&gt; run) {
+<span class="fc" id="L144">        return run.getParent().getDisplayName();</span>
+    }
+
+
+
+    public static String getInstanceUrl(AbstractBuild&lt;?, ?&gt; build, TaskListener listener) {
+<span class="nc" id="L150">        String envValue = getEnvironmentVariable(build, listener, &quot;JENKINS_URL&quot;);</span>
+        
+<span class="nc bnc" id="L152" title="All 2 branches missed.">        if (envValue != null) {</span>
+<span class="nc" id="L153">            return envValue;</span>
+        } else {
+<span class="nc" id="L155">            String jobPath = &quot;/job&quot; + &quot;/&quot; + build.getProject().getName() + &quot;/&quot;;</span>
+<span class="nc" id="L156">            int ind = build.getProject().getAbsoluteUrl().indexOf(jobPath);</span>
+<span class="nc" id="L157">            return build.getProject().getAbsoluteUrl().substring(0, ind);</span>
+        }
+    }
+
+    public static String getInstanceUrl(Run&lt;?, ?&gt; run, TaskListener listener) {
+<span class="fc" id="L162">        String envValue = getEnvironmentVariable(run, listener, &quot;JENKINS_URL&quot;);</span>
+
+<span class="pc bpc" id="L164" title="1 of 2 branches missed.">        if (envValue != null) {</span>
+<span class="nc" id="L165">            return envValue;</span>
+        } else {
+<span class="fc" id="L167">            String jobPath = &quot;/job&quot; + &quot;/&quot; + run.getParent().getName() + &quot;/&quot;;</span>
+<span class="fc" id="L168">            int ind = run.getParent().getAbsoluteUrl().indexOf(jobPath);</span>
+<span class="fc" id="L169">            return run.getParent().getAbsoluteUrl().substring(0, ind);</span>
+        }
+    }
+
+    public static String getScmUrl(AbstractBuild&lt;?, ?&gt; build, TaskListener listener) {
+<span class="nc bnc" id="L174" title="All 2 branches missed.">    	if (isGitScm(build)) {</span>
+<span class="nc" id="L175">    		return getEnvironmentVariable(build, listener, &quot;GIT_URL&quot;);</span>
+<span class="nc bnc" id="L176" title="All 2 branches missed.">    	} else if (isSvnScm(build)) {</span>
+<span class="nc" id="L177">    		return getEnvironmentVariable(build, listener, &quot;SVN_URL&quot;);</span>
+    	}
+    	
+<span class="nc" id="L180">    	return null;</span>
+    }
+
+    public static String getScmBranch(AbstractBuild&lt;?, ?&gt; build, TaskListener listener) {
+<span class="nc bnc" id="L184" title="All 2 branches missed.">    	if (isGitScm(build)) {</span>
+<span class="nc" id="L185">    		return getEnvironmentVariable(build, listener, &quot;GIT_BRANCH&quot;);</span>
+<span class="nc bnc" id="L186" title="All 2 branches missed.">    	} else if (isSvnScm(build)) {</span>
+<span class="nc" id="L187">    		return null;</span>
+    	}
+    	
+<span class="nc" id="L190">    	return null;</span>
+    }
+
+
+    public static String getScmRevisionNumber(AbstractBuild&lt;?, ?&gt; build, TaskListener listener) {
+<span class="nc bnc" id="L195" title="All 2 branches missed.">    	if (isGitScm(build)) {</span>
+<span class="nc" id="L196">    		return getEnvironmentVariable(build, listener, &quot;GIT_COMMIT&quot;);</span>
+<span class="nc bnc" id="L197" title="All 2 branches missed.">    	} else if (isSvnScm(build)) {</span>
+<span class="nc" id="L198">    		return getEnvironmentVariable(build, listener, &quot;SVN_REVISION&quot;);</span>
+    	}
+    	
+<span class="nc" id="L201">    	return null;</span>
+    }
+    
+    public static boolean isGitScm(AbstractBuild&lt;?, ?&gt; build) {
+<span class="nc" id="L205">    	return &quot;hudson.plugins.git.GitSCM&quot;.equalsIgnoreCase(build.getProject().getScm().getType());</span>
+    }
+
+
+    public static boolean isSvnScm(AbstractBuild&lt;?, ?&gt; build) {
+<span class="nc" id="L210">    	return &quot;hudson.scm.SubversionSCM&quot;.equalsIgnoreCase(build.getProject().getScm().getType());</span>
+    }
+
+    public static EnvVars getEnvironment(Run&lt;?, ?&gt; run, TaskListener listener) {
+<span class="fc" id="L214">        EnvVars env = null;</span>
+        try {
+<span class="fc" id="L216">            env = run.getEnvironment(listener);</span>
+<span class="nc" id="L217">        } catch (IOException | InterruptedException e) {</span>
+<span class="nc" id="L218">            logger.warning(&quot;Error getting environment variables&quot;);</span>
+<span class="fc" id="L219">        }</span>
+<span class="fc" id="L220">        return env;</span>
+    }
+
+
+    public static String getEnvironmentVariable(Run&lt;?, ?&gt; run, TaskListener listener, String key) {
+<span class="fc" id="L225">        EnvVars env = getEnvironment(run, listener);</span>
+<span class="pc bpc" id="L226" title="1 of 2 branches missed.">        if (env != null) {</span>
+<span class="nc" id="L227">            return env.get(key);</span>
+        } else {
+<span class="fc" id="L229">            return null;</span>
+        }
+    }
+
+    /** moved from BuildBuilder class **/
+
+
+    public static List&lt;RepoBranch&gt; getRepoBranch(AbstractBuild r) {
+<span class="nc" id="L237">        List&lt;RepoBranch&gt; list = new ArrayList&lt;&gt;();</span>
+<span class="nc" id="L238">        return getRepoBranchFromScmObject(r.getProject().getScm(), r);</span>
+    }
+
+
+    public static List&lt;RepoBranch&gt; getRepoBranch(Run run) {
+<span class="nc" id="L243">        List&lt;RepoBranch&gt; list = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L244" title="All 2 branches missed.">        if (run instanceof WorkflowRun) {</span>
+<span class="nc" id="L245">            WorkflowRun r = (WorkflowRun) run;</span>
+<span class="nc bnc" id="L246" title="All 2 branches missed.">            for (Object o : r.getParent().getSCMs()) {</span>
+<span class="nc" id="L247">                list.addAll(getRepoBranchFromScmObject(o, run));</span>
+<span class="nc" id="L248">            }</span>
+        }
+<span class="nc" id="L250">        return list;</span>
+    }
+
+    private static List&lt;RepoBranch&gt; getRepoBranchFromScmObject(Object scm, Run r) {
+<span class="nc" id="L254">        List&lt;RepoBranch&gt; list = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L255" title="All 2 branches missed.">        if (scm instanceof SubversionSCM) {</span>
+<span class="nc" id="L256">            list = getSVNRepoBranch((SubversionSCM) scm);</span>
+<span class="nc bnc" id="L257" title="All 2 branches missed.">        } else if (scm instanceof GitSCM) {</span>
+<span class="nc" id="L258">            list = getGitHubRepoBranch((GitSCM) scm, r);</span>
+<span class="nc bnc" id="L259" title="All 2 branches missed.">        } else if (scm instanceof MultiSCM) {</span>
+<span class="nc" id="L260">            List&lt;hudson.scm.SCM&gt; multiScms = ((MultiSCM) scm).getConfiguredSCMs();</span>
+<span class="nc bnc" id="L261" title="All 2 branches missed.">            for (hudson.scm.SCM hscm : multiScms) {</span>
+<span class="nc bnc" id="L262" title="All 2 branches missed.">                if (hscm instanceof SubversionSCM) {</span>
+<span class="nc" id="L263">                    list.addAll(getSVNRepoBranch((SubversionSCM) hscm));</span>
+<span class="nc bnc" id="L264" title="All 2 branches missed.">                } else if (hscm instanceof GitSCM) {</span>
+<span class="nc" id="L265">                    list.addAll(getGitHubRepoBranch((GitSCM) hscm, r));</span>
+                }
+<span class="nc" id="L267">            }</span>
+        }
+<span class="nc" id="L269">        return list;</span>
+    }
+
+
+    private static List&lt;RepoBranch&gt; getGitHubRepoBranch(GitSCM scm, Run r) {
+<span class="nc" id="L274">        List&lt;RepoBranch&gt; list = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L275" title="All 2 branches missed.">        if (!org.apache.commons.collections.CollectionUtils.isEmpty(scm.getBuildData(r).remoteUrls)) {</span>
+<span class="nc bnc" id="L276" title="All 2 branches missed.">            for (String url : scm.getBuildData(r).remoteUrls) {</span>
+<span class="nc bnc" id="L277" title="All 2 branches missed.">                if (url.endsWith(&quot;.git&quot;)) {</span>
+<span class="nc" id="L278">                    url = url.substring(0, url.lastIndexOf(&quot;.git&quot;));</span>
+                }
+<span class="nc" id="L280">                Map&lt;String, Build&gt; branches = scm.getBuildData(r).getBuildsByBranchName();</span>
+<span class="nc" id="L281">                String branch = &quot;&quot;;</span>
+<span class="nc bnc" id="L282" title="All 2 branches missed.">                for (String key : branches.keySet()) {</span>
+<span class="nc" id="L283">                    hudson.plugins.git.util.Build b = branches.get(key);</span>
+<span class="nc bnc" id="L284" title="All 2 branches missed.">                    if (b.hudsonBuildNumber == r.getNumber()) {</span>
+<span class="nc" id="L285">                        branch = key;</span>
+                    }
+<span class="nc" id="L287">                }</span>
+<span class="nc" id="L288">                list.add(new RepoBranch(url, branch, RepoBranch.RepoType.GIT));</span>
+<span class="nc" id="L289">            }</span>
+        }
+<span class="nc" id="L291">        return list;</span>
+    }
+
+    private static List&lt;RepoBranch&gt; getSVNRepoBranch(SubversionSCM scm) {
+<span class="nc" id="L295">        List&lt;RepoBranch&gt; list = new ArrayList&lt;&gt;();</span>
+<span class="nc" id="L296">        SubversionSCM.ModuleLocation[] mLocations = scm.getLocations();</span>
+<span class="nc bnc" id="L297" title="All 2 branches missed.">        if (mLocations != null) {</span>
+<span class="nc bnc" id="L298" title="All 2 branches missed.">            for (int i = 0; i &lt; mLocations.length; i++) {</span>
+<span class="nc" id="L299">                list.add(new RepoBranch(mLocations[i].getURL(), &quot;&quot;, RepoBranch.RepoType.SVN));</span>
+            }
+        }
+<span class="nc" id="L302">        return list;</span>
+    }
+
+    public static int getSafePositiveInteger(String value, int defaultValue) {
+<span class="nc" id="L306">        int returnValue = defaultValue;</span>
+<span class="nc bnc" id="L307" title="All 2 branches missed.">        if (value != null) {</span>
+            try {
+<span class="nc" id="L309">                returnValue = Integer.parseInt(value.trim());</span>
+<span class="nc bnc" id="L310" title="All 2 branches missed.">                if (returnValue &lt; 0) {</span>
+<span class="nc" id="L311">                    returnValue = defaultValue;</span>
+                }
+<span class="nc" id="L313">            } catch (java.lang.NumberFormatException nfe) {</span>
+                //do nothing. will return default at the end.
+<span class="nc" id="L315">            }</span>
+        }
+<span class="nc" id="L317">        return returnValue;</span>
+    }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.0.201801022044</span></div></body></html>

@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="zh"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>HygieiaSonarPublishStep.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Hygieia Publisher Plugin</a> &gt; <a href="index.source.html" class="el_package">jenkins.plugins.hygieia.workflow</a> &gt; <span class="el_source">HygieiaSonarPublishStep.java</span></div><h1>HygieiaSonarPublishStep.java</h1><pre class="source lang-java linenums">package jenkins.plugins.hygieia.workflow;
+
+import com.capitalone.dashboard.model.BuildStatus;
+import com.capitalone.dashboard.request.CodeQualityCreateRequest;
+import hudson.Extension;
+import hudson.model.Run;
+import hudson.model.TaskListener;
+import hudson.util.ListBoxModel;
+import hygieia.builder.BuildBuilder;
+import hygieia.builder.SonarBuilder;
+import jenkins.model.Jenkins;
+import jenkins.plugins.hygieia.DefaultHygieiaService;
+import jenkins.plugins.hygieia.HygieiaPublisher;
+import jenkins.plugins.hygieia.HygieiaResponse;
+import jenkins.plugins.hygieia.HygieiaService;
+import org.apache.commons.httpclient.HttpStatus;
+import org.jenkinsci.plugins.workflow.steps.AbstractStepDescriptorImpl;
+import org.jenkinsci.plugins.workflow.steps.AbstractStepImpl;
+import org.jenkinsci.plugins.workflow.steps.AbstractSynchronousNonBlockingStepExecution;
+import org.jenkinsci.plugins.workflow.steps.StepContextParameter;
+import org.json.simple.parser.ParseException;
+import org.kohsuke.stapler.DataBoundConstructor;
+import org.kohsuke.stapler.DataBoundSetter;
+
+import javax.annotation.Nonnull;
+import javax.inject.Inject;
+import java.io.IOException;
+import java.net.URISyntaxException;
+
+
+public class HygieiaSonarPublishStep extends AbstractStepImpl {
+
+
+    //Sonar 5.2+ changes: get query interval and max attempts from config
+    private String ceQueryIntervalInSeconds;
+    private String ceQueryMaxAttempts;
+
+
+
+    public String getCeQueryIntervalInSeconds() {
+<span class="nc" id="L41">        return ceQueryIntervalInSeconds;</span>
+    }
+
+    public String getCeQueryMaxAttempts() {
+<span class="nc" id="L45">        return ceQueryMaxAttempts;</span>
+    }
+
+    @DataBoundSetter
+    public void setCeQueryIntervalInSeconds(String ceQueryIntervalInSeconds) {
+<span class="nc" id="L50">        this.ceQueryIntervalInSeconds = ceQueryIntervalInSeconds;</span>
+<span class="nc" id="L51">    }</span>
+
+    @DataBoundSetter
+    public void setCeQueryMaxAttempts(String ceQueryMaxAttempts) {
+<span class="nc" id="L55">        this.ceQueryMaxAttempts = ceQueryMaxAttempts;</span>
+<span class="nc" id="L56">    }</span>
+
+    @DataBoundConstructor
+<span class="nc" id="L59">    public HygieiaSonarPublishStep(String ceQueryIntervalInSeconds, String ceQueryMaxAttempts) {</span>
+<span class="nc" id="L60">        this.ceQueryIntervalInSeconds = ceQueryIntervalInSeconds;</span>
+<span class="nc" id="L61">        this.ceQueryMaxAttempts = ceQueryMaxAttempts;</span>
+<span class="nc" id="L62">    }</span>
+
+
+    @Extension
+    public static class DescriptorImpl extends AbstractStepDescriptorImpl {
+
+        public DescriptorImpl() {
+<span class="nc" id="L69">            super(HygieiaSonarPublishStepExecution.class);</span>
+<span class="nc" id="L70">        }</span>
+
+        @Override
+        public String getFunctionName() {
+<span class="nc" id="L74">            return &quot;hygieiaSonarPublishStep&quot;;</span>
+        }
+
+        @Override
+        public String getDisplayName() {
+<span class="nc" id="L79">            return &quot;Hygieia Sonar Publish Step&quot;;</span>
+        }
+
+
+    }
+
+<span class="nc" id="L85">    public static class HygieiaSonarPublishStepExecution extends AbstractSynchronousNonBlockingStepExecution&lt;Integer&gt; {</span>
+
+        private static final long serialVersionUID = 1L;
+
+        @Inject
+        transient HygieiaSonarPublishStep step;
+
+        @StepContextParameter
+        transient TaskListener listener;
+
+        @StepContextParameter
+        transient Run run;
+
+        // This run MUST return a non-Void object, otherwise it will be executed three times!!!! No idea why
+        @Override
+        protected Integer run() throws Exception {
+
+            //default to global config values if not set in step, but allow step to override all global settings
+
+            Jenkins jenkins;
+            try {
+<span class="nc" id="L106">                jenkins = Jenkins.getInstance();</span>
+<span class="nc" id="L107">            } catch (NullPointerException ne) {</span>
+<span class="nc" id="L108">                listener.error(ne.toString());</span>
+<span class="nc" id="L109">                return -1;</span>
+<span class="nc" id="L110">            }</span>
+
+<span class="nc" id="L112">            HygieiaPublisher.DescriptorImpl hygieiaDesc = jenkins.getDescriptorByType(HygieiaPublisher.DescriptorImpl.class);</span>
+<span class="nc" id="L113">            HygieiaService hygieiaService = getHygieiaService(hygieiaDesc.getHygieiaAPIUrl(), hygieiaDesc.getHygieiaToken(),</span>
+<span class="nc" id="L114">                    hygieiaDesc.getHygieiaJenkinsName(), hygieiaDesc.isUseProxy());</span>
+
+<span class="nc" id="L116">            BuildBuilder buildBuilder = new BuildBuilder(run, hygieiaDesc.getHygieiaJenkinsName(), listener, BuildStatus.Success, false);</span>
+<span class="nc" id="L117">            HygieiaResponse buildResponse = hygieiaService.publishBuildData(buildBuilder.getBuildData());</span>
+
+
+<span class="nc bnc" id="L120" title="All 2 branches missed.">            if (buildResponse.getResponseCode() == HttpStatus.SC_CREATED) {</span>
+<span class="nc" id="L121">                listener.getLogger().println(&quot;Hygieia: Published Build Data For Sonar Publishing. &quot; + buildResponse.toString());</span>
+            } else {
+<span class="nc" id="L123">                listener.getLogger().println(&quot;Hygieia: Failed Publishing Build Data for Sonar Publishing. &quot; + buildResponse.toString());</span>
+            }
+
+            try {
+<span class="nc" id="L127">                SonarBuilder sonarBuilder = new SonarBuilder(run, listener, hygieiaDesc.getHygieiaJenkinsName(), step.getCeQueryIntervalInSeconds(),</span>
+<span class="nc" id="L128">                        step.getCeQueryMaxAttempts(), buildResponse.getResponseValue(), hygieiaDesc.isUseProxy());</span>
+<span class="nc" id="L129">                CodeQualityCreateRequest request = sonarBuilder.getSonarMetrics();</span>
+<span class="nc bnc" id="L130" title="All 2 branches missed.">                if (request != null) {</span>
+<span class="nc" id="L131">                    HygieiaResponse sonarResponse = hygieiaService.publishSonarResults(request);</span>
+<span class="nc bnc" id="L132" title="All 2 branches missed.">                    if (sonarResponse.getResponseCode() == HttpStatus.SC_CREATED) {</span>
+<span class="nc" id="L133">                        listener.getLogger().println(&quot;Hygieia: Published Sonar Data. &quot; + sonarResponse.toString());</span>
+                    } else {
+<span class="nc" id="L135">                        listener.getLogger().println(&quot;Hygieia: Failed Publishing Sonar Data. &quot; + sonarResponse.toString());</span>
+                    }
+<span class="nc" id="L137">                } else {</span>
+<span class="nc" id="L138">                    listener.getLogger().println(&quot;Hygieia: Published Sonar Result. Nothing to publish&quot;);</span>
+                }
+<span class="nc" id="L140">            } catch (IOException | URISyntaxException | ParseException e) {</span>
+<span class="nc" id="L141">                listener.getLogger().println(&quot;Hygieia: Publishing error&quot; + '\n' + e.getMessage());</span>
+<span class="nc" id="L142">            }</span>
+
+<span class="nc" id="L144">            return buildResponse.getResponseCode();</span>
+        }
+
+
+        //streamline unit testing
+        HygieiaService getHygieiaService(String hygieiaAPIUrl, String hygieiaToken, String hygieiaJenkinsName, boolean useProxy) {
+<span class="nc" id="L150">            return new DefaultHygieiaService(hygieiaAPIUrl, hygieiaToken, hygieiaJenkinsName, useProxy);</span>
+        }
+    }
+
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.0.201801022044</span></div></body></html>

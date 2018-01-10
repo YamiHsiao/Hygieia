@@ -1,0 +1,14 @@
+jenkins\plugins\hygieia\HygieiaPublisherStub$DescriptorImplStub.class
+jenkins\plugins\hygieia\HttpClientStub.class
+jenkins\plugins\hygieia\workflow\HygieiaCodeQualityPublishStepExecutionTest.class
+jenkins\plugins\hygieia\utils\CodeQualityMetricsConverterTest.class
+jenkins\plugins\hygieia\HygieiaPublisherStub$HygieiaArtifactStub.class
+jenkins\plugins\hygieia\HygieiaPublisherStub.class
+jenkins\plugins\hygieia\DefaultHygieiaServiceTest.class
+jenkins\plugins\hygieia\HygieiaPublisherTest.class
+jenkins\plugins\hygieia\HygieiaPublisherStub$HygieiaBuildStub.class
+jenkins\plugins\hygieia\workflow\HygieiaCodeQualityPublishStepTest.class
+InjectedTest.class
+jenkins\plugins\hygieia\DefaultHygieiaServiceStub.class
+jenkins\plugins\hygieia\HygieiaPublisherStub$HygieiaTestStub.class
+jenkins\plugins\hygieia\HygieiaPublisherTest$HygieiaServiceStub.class

@@ -1,0 +1,230 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="zh"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>CucumberJsonToTestResultTransformer.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Hygieia Publisher Plugin</a> &gt; <a href="index.source.html" class="el_package">hygieia.transformer</a> &gt; <span class="el_source">CucumberJsonToTestResultTransformer.java</span></div><h1>CucumberJsonToTestResultTransformer.java</h1><pre class="source lang-java linenums">package hygieia.transformer;
+
+import com.capitalone.dashboard.model.TestCase;
+import com.capitalone.dashboard.model.TestCaseCondition;
+import com.capitalone.dashboard.model.TestCaseStatus;
+import com.capitalone.dashboard.model.TestCaseStep;
+import com.capitalone.dashboard.model.TestSuite;
+import com.capitalone.dashboard.model.TestSuiteType;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+import org.json.simple.JSONArray;
+import org.json.simple.JSONObject;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Transforms a Cucumber result JSON string into a TestResult
+ */
+
+<span class="nc" id="L21">public class CucumberJsonToTestResultTransformer implements Transformer&lt;JSONArray, List&lt;TestSuite&gt;&gt; {</span>
+<span class="nc" id="L22">    private static final Log logger = LogFactory.getLog(CucumberJsonToTestResultTransformer.class);</span>
+
+
+    public List&lt;TestSuite&gt; transformer(JSONArray json) {
+
+<span class="nc bnc" id="L27" title="All 2 branches missed.">        if (json == null) {</span>
+<span class="nc" id="L28">            throw new IllegalArgumentException(&quot;json must not be empty&quot;);</span>
+        }
+
+<span class="nc" id="L31">        List&lt;TestSuite&gt; suites = new ArrayList&lt;TestSuite&gt;();</span>
+
+<span class="nc bnc" id="L33" title="All 2 branches missed.">        for (Object featureObj : json) {</span>
+<span class="nc" id="L34">            JSONObject feature = (JSONObject) featureObj;</span>
+<span class="nc" id="L35">            suites.add(parseFeatureAsTestSuite(feature));</span>
+<span class="nc" id="L36">        }</span>
+<span class="nc" id="L37">        return suites;</span>
+    }
+
+    private TestSuite parseFeatureAsTestSuite(JSONObject featureElement) {
+<span class="nc" id="L41">        TestSuite suite = new TestSuite();</span>
+<span class="nc" id="L42">        suite.setId(getString(featureElement, &quot;id&quot;));</span>
+<span class="nc" id="L43">        suite.setType(TestSuiteType.Functional);</span>
+<span class="nc" id="L44">        suite.setDescription(getString(featureElement, &quot;keyword&quot;) + &quot;:&quot; + getString(featureElement, &quot;name&quot;));</span>
+
+<span class="nc" id="L46">        long duration = 0;</span>
+
+<span class="nc" id="L48">        int testCaseTotalCount = getJsonArray(featureElement, &quot;elements&quot;).size();</span>
+<span class="nc" id="L49">        int testCaseSkippedCount = 0, testCaseSuccessCount = 0, testCaseFailCount = 0, testCaseUnknownCount = 0;</span>
+
+<span class="nc bnc" id="L51" title="All 2 branches missed.">        for (Object scenarioElement : getJsonArray(featureElement, &quot;elements&quot;)) {</span>
+<span class="nc" id="L52">            TestCase testCase = parseScenarioAsTestCase((JSONObject) scenarioElement);</span>
+<span class="nc" id="L53">            duration += testCase.getDuration();</span>
+<span class="nc bnc" id="L54" title="All 4 branches missed.">            switch (testCase.getStatus()) {</span>
+                case Success:
+<span class="nc" id="L56">                    testCaseSuccessCount++;</span>
+<span class="nc" id="L57">                    break;</span>
+                case Failure:
+<span class="nc" id="L59">                    testCaseFailCount++;</span>
+<span class="nc" id="L60">                    break;</span>
+                case Skipped:
+<span class="nc" id="L62">                    testCaseSkippedCount++;</span>
+<span class="nc" id="L63">                    break;</span>
+                default:
+<span class="nc" id="L65">                    testCaseUnknownCount++;</span>
+                    break;
+            }
+<span class="nc" id="L68">            suite.getTestCases().add(testCase);</span>
+<span class="nc" id="L69">        }</span>
+<span class="nc" id="L70">        suite.setSuccessTestCaseCount(testCaseSuccessCount);</span>
+<span class="nc" id="L71">        suite.setFailedTestCaseCount(testCaseFailCount);</span>
+<span class="nc" id="L72">        suite.setSkippedTestCaseCount(testCaseSkippedCount);</span>
+<span class="nc" id="L73">        suite.setTotalTestCaseCount(testCaseTotalCount);</span>
+<span class="nc" id="L74">        suite.setUnknownStatusCount(testCaseUnknownCount);</span>
+<span class="nc" id="L75">        suite.setDuration(duration);</span>
+<span class="nc bnc" id="L76" title="All 2 branches missed.">        if (testCaseFailCount &gt; 0) {</span>
+<span class="nc" id="L77">            suite.setStatus(TestCaseStatus.Failure);</span>
+<span class="nc bnc" id="L78" title="All 2 branches missed.">        } else if (testCaseSkippedCount &gt; 0) {</span>
+<span class="nc" id="L79">            suite.setStatus(TestCaseStatus.Skipped);</span>
+<span class="nc bnc" id="L80" title="All 2 branches missed.">        } else if (testCaseSuccessCount &gt; 0) {</span>
+<span class="nc" id="L81">            suite.setStatus(TestCaseStatus.Success);</span>
+        } else {
+<span class="nc" id="L83">            suite.setStatus(TestCaseStatus.Unknown);</span>
+        }
+<span class="nc" id="L85">        return suite;</span>
+    }
+
+    private TestCase parseScenarioAsTestCase(JSONObject scenarioElement) {
+<span class="nc" id="L89">        TestCase testCase = new TestCase();</span>
+<span class="nc" id="L90">        testCase.setId(getString(scenarioElement, &quot;id&quot;));</span>
+<span class="nc" id="L91">        testCase.setDescription(getString(scenarioElement, &quot;keyword&quot;) + &quot;:&quot; + getString(scenarioElement, &quot;name&quot;));</span>
+        // Parse each step as a TestCase
+<span class="nc" id="L93">        int testStepSuccessCount = 0, testStepFailCount = 0, testStepSkippedCount = 0, testStepUnknownCount = 0;</span>
+<span class="nc" id="L94">        long testDuration = 0;</span>
+
+<span class="nc bnc" id="L96" title="All 2 branches missed.">        for (Object step : getJsonArray(scenarioElement, &quot;steps&quot;)) {</span>
+<span class="nc" id="L97">            TestCaseStep testCaseStep = parseStepAsTestCaseStep((JSONObject) step);</span>
+<span class="nc" id="L98">            testDuration += testCaseStep.getDuration();</span>
+            // Count Statuses
+<span class="nc bnc" id="L100" title="All 4 branches missed.">            switch (testCaseStep.getStatus()) {</span>
+                case Success:
+<span class="nc" id="L102">                    testStepSuccessCount++;</span>
+<span class="nc" id="L103">                    break;</span>
+                case Failure:
+<span class="nc" id="L105">                    testStepFailCount++;</span>
+<span class="nc" id="L106">                    break;</span>
+                case Skipped:
+<span class="nc" id="L108">                    testStepSkippedCount++;</span>
+<span class="nc" id="L109">                    break;</span>
+                default:
+<span class="nc" id="L111">                    testStepUnknownCount++;</span>
+                    break;
+
+            }
+<span class="nc" id="L115">            testCase.getTestSteps().add(testCaseStep);</span>
+<span class="nc" id="L116">        }</span>
+        // Set Duration
+<span class="nc" id="L118">        testCase.setDuration(testDuration);</span>
+<span class="nc" id="L119">        testCase.setSuccessTestStepCount(testStepSuccessCount);</span>
+<span class="nc" id="L120">        testCase.setSkippedTestStepCount(testStepSkippedCount);</span>
+<span class="nc" id="L121">        testCase.setFailedTestStepCount(testStepFailCount);</span>
+<span class="nc" id="L122">        testCase.setUnknownStatusCount(testStepUnknownCount);</span>
+<span class="nc" id="L123">        testCase.setTotalTestStepCount(testCase.getTestSteps().size());</span>
+        // Set Status
+<span class="nc bnc" id="L125" title="All 2 branches missed.">        if (testStepFailCount &gt; 0) {</span>
+<span class="nc" id="L126">            testCase.setStatus(TestCaseStatus.Failure);</span>
+<span class="nc bnc" id="L127" title="All 2 branches missed.">        } else if (testStepSkippedCount &gt; 0) {</span>
+<span class="nc" id="L128">            testCase.setStatus(TestCaseStatus.Skipped);</span>
+<span class="nc bnc" id="L129" title="All 2 branches missed.">        } else if (testStepSuccessCount &gt; 0) {</span>
+<span class="nc" id="L130">            testCase.setStatus(TestCaseStatus.Success);</span>
+        } else {
+<span class="nc" id="L132">            testCase.setStatus(TestCaseStatus.Unknown);</span>
+        }
+
+<span class="nc bnc" id="L135" title="All 2 branches missed.">        for (Object tag : getJsonArray(scenarioElement, &quot;tags&quot;)) {</span>
+<span class="nc" id="L136">            testCase.getTags().add(getString((JSONObject) tag, &quot;name&quot;));</span>
+<span class="nc" id="L137">        }</span>
+
+<span class="nc bnc" id="L139" title="All 2 branches missed.">        for (Object before : getJsonArray(scenarioElement, &quot;before&quot;)) {</span>
+<span class="nc" id="L140">            TestCaseCondition condition = getTestCondition((JSONObject) before);</span>
+<span class="nc bnc" id="L141" title="All 2 branches missed.">            if (condition != null) {</span>
+<span class="nc" id="L142">                testCase.getBefore().add(condition);</span>
+            }
+<span class="nc" id="L144">        }</span>
+<span class="nc bnc" id="L145" title="All 2 branches missed.">        for (Object after : getJsonArray(scenarioElement, &quot;after&quot;)) {</span>
+<span class="nc" id="L146">            TestCaseCondition condition = getTestCondition((JSONObject) after);</span>
+<span class="nc bnc" id="L147" title="All 2 branches missed.">            if (condition != null) {</span>
+<span class="nc" id="L148">                testCase.getAfter().add(condition);</span>
+            }
+<span class="nc" id="L150">        }</span>
+<span class="nc" id="L151">        return testCase;</span>
+    }
+
+    private TestCaseCondition getTestCondition(JSONObject cond) {
+<span class="nc bnc" id="L155" title="All 2 branches missed.">        if (cond == null) return null;</span>
+<span class="nc" id="L156">        TestCaseCondition condition = new TestCaseCondition();</span>
+<span class="nc" id="L157">        JSONObject match = (JSONObject) cond.get(&quot;match&quot;);</span>
+<span class="nc bnc" id="L158" title="All 2 branches missed.">        if (match == null) return null;</span>
+<span class="nc bnc" id="L159" title="All 2 branches missed.">        if (match.get(&quot;location&quot;) instanceof JSONObject) {</span>
+<span class="nc" id="L160">            JSONObject location = (JSONObject) match.get(&quot;location&quot;);</span>
+<span class="nc bnc" id="L161" title="All 2 branches missed.">            if (location == null) return null;</span>
+<span class="nc" id="L162">            JSONObject filepath = (JSONObject) location.get(&quot;filepath&quot;);</span>
+<span class="nc bnc" id="L163" title="All 2 branches missed.">            if (filepath == null) return null;</span>
+<span class="nc" id="L164">            condition.setCondition(&quot;Match: &quot; + getString(filepath, &quot;filename&quot;));</span>
+<span class="nc" id="L165">        } else {</span>
+<span class="nc" id="L166">            condition.setCondition(&quot;Match: &quot; + getString(match, &quot;location&quot;));</span>
+        }
+<span class="nc" id="L168">        JSONObject result = (JSONObject) cond.get(&quot;result&quot;);</span>
+<span class="nc" id="L169">        String stat = getString(result, &quot;status&quot;);</span>
+<span class="nc" id="L170">        long duration = (long) result.get(&quot;duration&quot;);</span>
+<span class="nc" id="L171">        condition.setResult(getStatus(stat), duration);</span>
+<span class="nc" id="L172">        return condition;</span>
+    }
+
+    private TestCaseStatus getStatus(String stat) {
+<span class="nc bnc" id="L176" title="All 4 branches missed.">        switch (stat) {</span>
+            case &quot;passed&quot;:
+<span class="nc" id="L178">                return TestCaseStatus.Success;</span>
+            case &quot;skipped&quot;:
+<span class="nc" id="L180">                return TestCaseStatus.Skipped;</span>
+            case &quot;failed&quot;:
+<span class="nc" id="L182">                return TestCaseStatus.Failure;</span>
+            default:
+<span class="nc" id="L184">                return TestCaseStatus.Unknown;</span>
+        }
+    }
+
+    private TestCaseStep parseStepAsTestCaseStep(JSONObject stepObject) {
+<span class="nc" id="L189">        TestCaseStep step = new TestCaseStep();</span>
+<span class="nc" id="L190">        step.setDescription(getString(stepObject, &quot;keyword&quot;) + &quot;:&quot; + getString(stepObject, &quot;name&quot;));</span>
+<span class="nc" id="L191">        step.setId(stepObject.get(&quot;line&quot;).toString());</span>
+<span class="nc" id="L192">        TestCaseStatus stepStatus = TestCaseStatus.Unknown;</span>
+
+<span class="nc" id="L194">        Object resultObj = stepObject.get(&quot;result&quot;);</span>
+<span class="nc bnc" id="L195" title="All 2 branches missed.">        if (resultObj != null) {</span>
+<span class="nc" id="L196">            JSONObject result = (JSONObject) resultObj;</span>
+<span class="nc" id="L197">            step.setDuration(getLong(result, &quot;duration&quot;) / 1000000l);</span>
+<span class="nc" id="L198">            stepStatus = parseStatus(result);</span>
+        }
+<span class="nc" id="L200">        step.setStatus(stepStatus);</span>
+<span class="nc" id="L201">        return step;</span>
+    }
+
+
+    private TestCaseStatus parseStatus(JSONObject result) {
+<span class="nc" id="L206">        String status = getString(result, &quot;status&quot;);</span>
+<span class="nc bnc" id="L207" title="All 2 branches missed.">        if (status.equalsIgnoreCase(&quot;passed&quot;)) return TestCaseStatus.Success;</span>
+<span class="nc bnc" id="L208" title="All 2 branches missed.">        if (status.equalsIgnoreCase(&quot;failed&quot;)) return TestCaseStatus.Failure;</span>
+<span class="nc bnc" id="L209" title="All 2 branches missed.">        if (status.equalsIgnoreCase(&quot;skipped&quot;)) return TestCaseStatus.Skipped;</span>
+<span class="nc" id="L210">        return TestCaseStatus.Unknown;</span>
+    }
+
+
+    private JSONArray getJsonArray(JSONObject json, String key) {
+<span class="nc" id="L215">        Object array = json.get(key);</span>
+<span class="nc bnc" id="L216" title="All 2 branches missed.">        return array == null ? new JSONArray() : (JSONArray) array;</span>
+    }
+
+    private String getString(JSONObject json, String key) {
+<span class="nc bnc" id="L220" title="All 2 branches missed.">        if (json == null) return &quot;&quot;;</span>
+<span class="nc" id="L221">        Object obj = json.get(key);</span>
+<span class="nc bnc" id="L222" title="All 2 branches missed.">        return (obj == null) ? &quot;&quot; : (String) obj;</span>
+    }
+
+    private long getLong(JSONObject json, String key) {
+<span class="nc" id="L226">        Object obj = json.get(key);</span>
+<span class="nc bnc" id="L227" title="All 2 branches missed.">        return (obj == null) ? 0 : (Long) obj;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.0.201801022044</span></div></body></html>

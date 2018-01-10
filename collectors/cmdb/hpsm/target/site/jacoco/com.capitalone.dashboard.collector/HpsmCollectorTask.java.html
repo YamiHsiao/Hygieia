@@ -1,0 +1,241 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="zh"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>HpsmCollectorTask.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">com.capitalone.dashboard:hpsm-cmdb-collector</a> &gt; <a href="index.source.html" class="el_package">com.capitalone.dashboard.collector</a> &gt; <span class="el_source">HpsmCollectorTask.java</span></div><h1>HpsmCollectorTask.java</h1><pre class="source lang-java linenums">package com.capitalone.dashboard.collector;
+
+import com.capitalone.dashboard.model.ChangeOrder;
+import com.capitalone.dashboard.model.Cmdb;
+import com.capitalone.dashboard.model.HpsmCollector;
+import com.capitalone.dashboard.model.Incident;
+import com.capitalone.dashboard.repository.BaseCollectorRepository;
+import com.capitalone.dashboard.repository.ChangeOrderRepository;
+import com.capitalone.dashboard.repository.CmdbRepository;
+import com.capitalone.dashboard.repository.HpsmRepository;
+import com.capitalone.dashboard.repository.IncidentRepository;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.scheduling.TaskScheduler;
+import org.springframework.stereotype.Component;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * CollectorTask that fetches configuration item data from HPSM
+ */
+@Component
+public class HpsmCollectorTask extends CollectorTask&lt;HpsmCollector&gt; {
+<span class="fc" id="L26">    private static final Log LOG = LogFactory.getLog(HpsmCollectorTask.class);</span>
+
+    private final HpsmRepository hpsmRepository;
+    private final CmdbRepository cmdbRepository;
+    private final ChangeOrderRepository changeOrderRepository;
+    private final IncidentRepository incidentRepository;
+    private final HpsmClient hpsmClient;
+    private final HpsmSettings hpsmSettings;
+
+    private static final String APP_ACTION_NAME = &quot;Hpsm&quot;;
+    private static final String CHANGE_ACTION_NAME = &quot;HpsmChange&quot;;
+    private static final String INCIDENT_ACTION_NAME = &quot;HpsmIncident&quot;;
+
+    private String collectorAction;
+
+    private static final String DEFAULT_COLLECTOR_ACTION_NAME = APP_ACTION_NAME;
+    private static final String COLLECTOR_ACTION_PROPERTY_KEY=&quot;collector.action&quot;;
+
+    @Autowired
+    public HpsmCollectorTask(TaskScheduler taskScheduler, HpsmSettings hpsmSettings,
+                                HpsmRepository hpsmRepository,
+                                CmdbRepository cmdbRepository,
+                                ChangeOrderRepository changeOrderRepository,
+                                IncidentRepository incidentRepository,
+                                HpsmClient hpsmClient) {
+
+<span class="fc bfc" id="L52" title="All 2 branches covered.">            super(taskScheduler, (System.getProperty(COLLECTOR_ACTION_PROPERTY_KEY) == null) ? DEFAULT_COLLECTOR_ACTION_NAME : System.getProperty(COLLECTOR_ACTION_PROPERTY_KEY));</span>
+<span class="fc bfc" id="L53" title="All 2 branches covered.">            collectorAction = (System.getProperty(COLLECTOR_ACTION_PROPERTY_KEY) == null) ? DEFAULT_COLLECTOR_ACTION_NAME : System.getProperty(COLLECTOR_ACTION_PROPERTY_KEY);</span>
+
+<span class="fc" id="L55">            this.hpsmSettings = hpsmSettings;</span>
+<span class="fc" id="L56">            this.hpsmRepository = hpsmRepository;</span>
+<span class="fc" id="L57">            this.cmdbRepository = cmdbRepository;</span>
+<span class="fc" id="L58">            this.changeOrderRepository = changeOrderRepository;</span>
+<span class="fc" id="L59">            this.incidentRepository = incidentRepository;</span>
+<span class="fc" id="L60">            this.hpsmClient = hpsmClient;</span>
+<span class="fc" id="L61">    }</span>
+
+    /**
+     * Accessor method for the collector prototype object
+     */
+    @Override
+    public HpsmCollector getCollector() {
+<span class="nc" id="L68">        return HpsmCollector.prototype(collectorAction);</span>
+    }
+
+    @Override
+    public BaseCollectorRepository&lt;HpsmCollector&gt; getCollectorRepository() {
+<span class="nc" id="L73">        return hpsmRepository;</span>
+    }
+
+    @Override
+    public String getCron() {
+<span class="nc" id="L78">        String cron = hpsmSettings.getCron();</span>
+
+<span class="nc bnc" id="L80" title="All 2 branches missed.">        if(collectorAction.equals(CHANGE_ACTION_NAME)) {</span>
+<span class="nc" id="L81">            cron = hpsmSettings.getChangeOrderCron();</span>
+        }
+<span class="nc bnc" id="L83" title="All 2 branches missed.">        else if(collectorAction.equals(INCIDENT_ACTION_NAME)) {</span>
+<span class="nc" id="L84">            cron = hpsmSettings.getIncidentCron();</span>
+        }
+<span class="nc" id="L86">        return cron;</span>
+    }
+
+<span class="nc" id="L89">    public String getCollectorAction() { return collectorAction; }</span>
+
+<span class="fc" id="L91">    public void setCollectorAction(String collectorAction) { this.collectorAction = collectorAction; }</span>
+
+    private void collectApps(HpsmCollector collector) {
+        List&lt;Cmdb&gt; cmdbList;
+<span class="fc" id="L95">        List&lt;String&gt; configurationItemNameList = new ArrayList&lt;&gt;();</span>
+
+<span class="fc" id="L97">        int updatedCount = 0;</span>
+<span class="fc" id="L98">        int insertCount = 0;</span>
+        int inValidCount;
+
+<span class="fc" id="L101">        cmdbList = hpsmClient.getApps();</span>
+
+<span class="fc bfc" id="L103" title="All 2 branches covered.">        for(Cmdb cmdb: cmdbList){</span>
+
+<span class="fc" id="L105">            String configItem = cmdb.getConfigurationItem();</span>
+<span class="fc" id="L106">            Cmdb cmdbDbItem =  cmdbRepository.findByConfigurationItem(configItem);</span>
+<span class="fc" id="L107">            configurationItemNameList.add(configItem);</span>
+<span class="pc bpc" id="L108" title="3 of 4 branches missed.">            if(cmdbDbItem != null &amp;&amp; !cmdb.equals(cmdbDbItem)){</span>
+<span class="nc" id="L109">                cmdb.setId(cmdbDbItem.getId());</span>
+<span class="nc" id="L110">                cmdb.setCollectorItemId(collector.getId());</span>
+<span class="nc" id="L111">                cmdbRepository.save(cmdb);</span>
+<span class="nc" id="L112">                updatedCount++;</span>
+<span class="pc bpc" id="L113" title="1 of 2 branches missed.">            }else if(cmdbDbItem == null){</span>
+<span class="fc" id="L114">                cmdb.setCollectorItemId(collector.getId());</span>
+<span class="fc" id="L115">                cmdbRepository.save(cmdb);</span>
+<span class="fc" id="L116">                insertCount++;</span>
+            }
+<span class="fc" id="L118">        }</span>
+
+<span class="fc" id="L120">        inValidCount = cleanUpOldCmdbItems(configurationItemNameList);</span>
+
+<span class="fc" id="L122">        LOG.info(&quot;Inserted Cmdb Item Count: &quot; + insertCount);</span>
+<span class="fc" id="L123">        LOG.info(&quot;Updated Cmdb Item Count: &quot; +  updatedCount);</span>
+<span class="fc" id="L124">        LOG.info(&quot;Invalid Cmdb Item Count: &quot; +  inValidCount);</span>
+
+<span class="fc" id="L126">    }</span>
+
+    private void collectChangeOrders(HpsmCollector collector) {
+
+<span class="fc" id="L130">        long lastExecuted = collector.getLastExecuted();</span>
+<span class="fc" id="L131">        long changeCount = changeOrderRepository.count();</span>
+
+<span class="fc" id="L133">        hpsmClient.setLastExecuted(lastExecuted);</span>
+<span class="fc" id="L134">        hpsmClient.setChangeCount(changeCount);</span>
+
+        List&lt;ChangeOrder&gt; changeList;
+
+<span class="fc" id="L138">        int updatedCount = 0;</span>
+<span class="fc" id="L139">        int insertCount = 0;</span>
+
+<span class="fc" id="L141">        changeList = hpsmClient.getChangeOrders();</span>
+
+<span class="fc bfc" id="L143" title="All 2 branches covered.">        for (ChangeOrder changeOrder : changeList) {</span>
+<span class="fc" id="L144">            String changeId = changeOrder.getChangeID();</span>
+<span class="fc" id="L145">            ChangeOrder changeDbItem = changeOrderRepository.findByChangeID(changeId);</span>
+<span class="pc bpc" id="L146" title="3 of 4 branches missed.">            if (changeDbItem != null &amp;&amp; !changeOrder.equals(changeDbItem)) {</span>
+<span class="nc" id="L147">                changeOrder.setId(changeDbItem.getId());</span>
+<span class="nc" id="L148">                changeOrder.setCollectorItemId(collector.getId());</span>
+<span class="nc" id="L149">                changeOrderRepository.save(changeOrder);</span>
+<span class="nc" id="L150">                updatedCount++;</span>
+<span class="pc bpc" id="L151" title="1 of 2 branches missed.">            } else if (changeDbItem == null) {</span>
+<span class="fc" id="L152">                changeOrder.setCollectorItemId(collector.getId());</span>
+<span class="fc" id="L153">                changeOrderRepository.save(changeOrder);</span>
+<span class="fc" id="L154">                insertCount++;</span>
+            }
+<span class="fc" id="L156">        }</span>
+
+<span class="fc" id="L158">        LOG.info(&quot;Inserted ChangeOrder Item Count: &quot; + insertCount);</span>
+<span class="fc" id="L159">        LOG.info(&quot;Updated ChangeOrder Item Count: &quot; +  updatedCount);</span>
+
+<span class="fc" id="L161">    }</span>
+
+    private void collectIncidents(HpsmCollector collector) {
+
+<span class="fc" id="L165">        long lastExecuted = collector.getLastExecuted();</span>
+<span class="fc" id="L166">        long incidentCount = incidentRepository.count();</span>
+
+        List&lt;Incident&gt; incidentList;
+
+<span class="fc" id="L170">        int updatedCount = 0;</span>
+<span class="fc" id="L171">        int insertCount = 0;</span>
+
+<span class="fc" id="L173">        hpsmClient.setLastExecuted(lastExecuted);</span>
+<span class="fc" id="L174">        hpsmClient.setIncidentCount(incidentCount);</span>
+<span class="fc" id="L175">        incidentList = hpsmClient.getIncidents();</span>
+
+<span class="fc bfc" id="L177" title="All 2 branches covered.">        for (Incident incident : incidentList) {</span>
+
+<span class="fc" id="L179">            String incidentId = incident.getIncidentID();</span>
+<span class="fc" id="L180">            Incident incidentDbItem = incidentRepository.findByIncidentID(incidentId);</span>
+<span class="pc bpc" id="L181" title="3 of 4 branches missed.">            if (incidentDbItem != null &amp;&amp; !incident.equals(incidentDbItem)) {</span>
+<span class="nc" id="L182">                incident.setId(incidentDbItem.getId());</span>
+<span class="nc" id="L183">                incident.setCollectorItemId(collector.getId());</span>
+<span class="nc" id="L184">                incidentRepository.save(incident);</span>
+<span class="nc" id="L185">                updatedCount++;</span>
+<span class="pc bpc" id="L186" title="1 of 2 branches missed.">            } else if (incidentDbItem == null) {</span>
+<span class="fc" id="L187">                incident.setCollectorItemId(collector.getId());</span>
+<span class="fc" id="L188">                incidentRepository.save(incident);</span>
+<span class="fc" id="L189">                insertCount++;</span>
+            }
+<span class="fc" id="L191">        }</span>
+
+<span class="fc" id="L193">        LOG.info(&quot;Inserted Incident Item Count: &quot; + insertCount);</span>
+<span class="fc" id="L194">        LOG.info(&quot;Updated Incident Item Count: &quot; + updatedCount);</span>
+<span class="fc" id="L195">    }</span>
+
+    @Override
+    public void collect(HpsmCollector collector) {
+<span class="fc" id="L199">        long start = System.currentTimeMillis();</span>
+<span class="fc" id="L200">        logBanner(&quot;Starting...&quot;);</span>
+
+<span class="fc bfc" id="L202" title="All 2 branches covered.">        if(collectorAction.equals(APP_ACTION_NAME)) {</span>
+<span class="fc" id="L203">            log(&quot;Collecting Apps&quot;);</span>
+<span class="fc" id="L204">            collectApps(collector);</span>
+        }
+<span class="fc bfc" id="L206" title="All 2 branches covered.">        else if(collectorAction.equals(CHANGE_ACTION_NAME)) {</span>
+<span class="fc" id="L207">            log(&quot;Collecting Changes&quot;);</span>
+<span class="fc" id="L208">            collectChangeOrders(collector);</span>
+        }
+<span class="pc bpc" id="L210" title="1 of 2 branches missed.">        else if(collectorAction.equals(INCIDENT_ACTION_NAME)) {</span>
+<span class="fc" id="L211">            log(&quot;Collecting Incidents&quot;);</span>
+<span class="fc" id="L212">            collectIncidents(collector);</span>
+        }
+        else{
+<span class="nc" id="L215">            log(&quot;Unknown value passed to -D&quot; + COLLECTOR_ACTION_PROPERTY_KEY + &quot;: &quot; + collectorAction);</span>
+        }
+
+<span class="fc" id="L218">        log(&quot;Finished&quot;, start);</span>
+<span class="fc" id="L219">    }</span>
+
+    /**
+     *  Takes configurationItemNameList (list of all APP/component names) and List&lt;Cmdb&gt; from client and sets flag to false for old items in mongo
+     * @param configurationItemNameList
+     * @return return count of items invalidated
+     */
+    private int cleanUpOldCmdbItems(List&lt;String&gt; configurationItemNameList) {
+<span class="fc" id="L227">        int inValidCount = 0;</span>
+<span class="fc bfc" id="L228" title="All 2 branches covered.">        for(Cmdb cmdb:  cmdbRepository.findAll()){</span>
+<span class="fc" id="L229">            String configItem = cmdb.getConfigurationItem();</span>
+
+<span class="pc bpc" id="L231" title="2 of 4 branches missed.">            if(configurationItemNameList != null &amp;&amp; !configurationItemNameList.contains(configItem)){</span>
+<span class="nc" id="L232">                cmdb.setValidConfigItem(false);</span>
+<span class="nc" id="L233">                cmdbRepository.save(cmdb);</span>
+<span class="nc" id="L234">                inValidCount++;</span>
+            }
+<span class="fc" id="L236">        }</span>
+<span class="fc" id="L237">        return inValidCount;</span>
+    }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.6.201602180812</span></div></body></html>

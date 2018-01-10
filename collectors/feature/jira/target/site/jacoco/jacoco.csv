@@ -1,0 +1,19 @@
+GROUP,PACKAGE,CLASS,INSTRUCTION_MISSED,INSTRUCTION_COVERED,BRANCH_MISSED,BRANCH_COVERED,LINE_MISSED,LINE_COVERED,COMPLEXITY_MISSED,COMPLEXITY_COVERED,METHOD_MISSED,METHOD_COVERED
+com.capitalone.dashboard:jira-feature-collector,com.capitalone.dashboard.client,JiraRestClientSupplier,272,0,20,0,65,0,15,0,5,0
+com.capitalone.dashboard:jira-feature-collector,com.capitalone.dashboard.client,DefaultJiraClient.new Authenticator() {...},21,0,0,0,2,0,2,0,2,0
+com.capitalone.dashboard:jira-feature-collector,com.capitalone.dashboard.client,DefaultJiraClient.new Authenticator() {...},21,0,0,0,2,0,2,0,2,0
+com.capitalone.dashboard:jira-feature-collector,com.capitalone.dashboard.client,DefaultJiraClient.new Authenticator() {...},21,0,0,0,2,0,2,0,2,0
+com.capitalone.dashboard:jira-feature-collector,com.capitalone.dashboard.client,DefaultJiraClient,1471,0,134,0,250,0,78,0,11,0
+com.capitalone.dashboard:jira-feature-collector,com.capitalone.dashboard.client,Sprint,0,59,0,0,0,25,0,17,0,17
+com.capitalone.dashboard:jira-feature-collector,com.capitalone.dashboard.client,JiraRestClientSupplier.new Authenticator() {...},21,0,0,0,2,0,2,0,2,0
+com.capitalone.dashboard:jira-feature-collector,com.capitalone.dashboard.client.project,ProjectDataClientImpl,66,138,14,10,15,39,12,6,1,5
+com.capitalone.dashboard:jira-feature-collector,com.capitalone.dashboard.client.story,StoryDataClientImpl,371,1190,77,91,70,269,70,31,0,17
+com.capitalone.dashboard:jira-feature-collector,com.capitalone.dashboard.client.story,StoryDataClientImpl.new Comparator() {...},6,13,1,1,1,4,1,2,0,2
+com.capitalone.dashboard:jira-feature-collector,com.capitalone.dashboard,Application,8,0,0,0,3,0,2,0,2,0
+com.capitalone.dashboard:jira-feature-collector,com.capitalone.dashboard.collector,FeatureCollectorTask,130,0,0,0,32,0,6,0,6,0
+com.capitalone.dashboard:jira-feature-collector,com.capitalone.dashboard.model,FeatureCollector,21,3,0,0,7,1,1,1,1,1
+com.capitalone.dashboard:jira-feature-collector,com.capitalone.dashboard.util,FeatureSettings,154,66,0,0,66,28,44,19,44,19
+com.capitalone.dashboard:jira-feature-collector,com.capitalone.dashboard.util,FeatureWidgetQueries,116,0,2,0,26,0,7,0,6,0
+com.capitalone.dashboard:jira-feature-collector,com.capitalone.dashboard.util,DateUtil,200,59,12,2,53,18,19,4,12,4
+com.capitalone.dashboard:jira-feature-collector,com.capitalone.dashboard.util,ClientUtil,192,442,35,63,44,109,27,35,2,11
+com.capitalone.dashboard:jira-feature-collector,com.capitalone.dashboard.client.team,TeamDataClientImpl,48,113,10,6,12,33,8,5,1,4

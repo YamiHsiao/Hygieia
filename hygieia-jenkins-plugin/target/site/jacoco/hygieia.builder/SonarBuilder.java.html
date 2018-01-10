@@ -1,0 +1,350 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="zh"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>SonarBuilder.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Hygieia Publisher Plugin</a> &gt; <a href="index.source.html" class="el_package">hygieia.builder</a> &gt; <span class="el_source">SonarBuilder.java</span></div><h1>SonarBuilder.java</h1><pre class="source lang-java linenums">package hygieia.builder;
+
+import com.capitalone.dashboard.model.CodeQualityMetric;
+import com.capitalone.dashboard.model.CodeQualityMetricStatus;
+import com.capitalone.dashboard.model.CodeQualityType;
+import com.capitalone.dashboard.request.CodeQualityCreateRequest;
+import hudson.model.AbstractBuild;
+import hudson.model.BuildListener;
+import hudson.model.Run;
+import hudson.model.TaskListener;
+import hudson.util.IOUtils;
+import jenkins.plugins.hygieia.RestCall;
+import jenkins.plugins.hygieia.workflow.HygieiaSonarPublishStep;
+import org.apache.commons.httpclient.HttpStatus;
+import org.apache.commons.lang3.StringUtils;
+import org.json.simple.JSONArray;
+import org.json.simple.JSONObject;
+import org.json.simple.parser.JSONParser;
+import org.json.simple.parser.ParseException;
+
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.Reader;
+import java.lang.Integer;
+import java.lang.InterruptedException;
+import java.lang.String;
+import java.lang.Thread;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.text.SimpleDateFormat;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import static hygieia.utils.HygieiaUtils.getSafePositiveInteger;
+
+public class SonarBuilder {
+<span class="nc" id="L39">    private static final Logger logger = Logger.getLogger(SonarBuilder.class.getName());</span>
+    /**
+     * Pattern for Sonar project URL in logs
+     */
+<span class="nc" id="L43">    public static final String URL_PATTERN_IN_LOGS = &quot;.*&quot; + Pattern.quote(&quot;ANALYSIS SUCCESSFUL, you can browse &quot;) + &quot;(.*)&quot;;</span>
+    public static final String URL_PROJECT_ID_FRAGMENT = &quot;/api/projects/index?format=json&amp;key=%s&quot;;
+
+<span class="nc" id="L46">    public static final String CE_URL_PATTERN_IN_LOGS = &quot;.*&quot; + Pattern.quote(&quot;More about the report processing at &quot;) + &quot;(.*)&quot;;</span>
+    public static final String CE_URL_PROJECT_ID_FRAGMENT = &quot;/ce/task?id=%s&quot;;
+
+    public static final String URL_METRIC_FRAGMENT = &quot;/api/resources?format=json&amp;resource=%s&amp;metrics=%s&amp;includealerts=true&amp;includetrends=true&quot;;
+    public static final String METRICS = &quot;security-violations,ncloc,violations,critical_violations,major_violations,blocker_violations,violations_density,tests,test_success_density,test_errors,test_failures,coverage,line_coverage,sqale_index,new_violations,new_blocker_violations,new_critical_violations,new_major_violations,new_coverage,new_lines_to_cover,new_line_coverage&quot;;
+    private static final String DATE_FORMAT = &quot;yyyy-MM-dd'T'HH:mm:ssZ&quot;;
+    private static final String ID = &quot;id&quot;;
+    private static final String NAME = &quot;name&quot;;
+    private static final String KEY = &quot;key&quot;;
+    private static final String VERSION = &quot;version&quot;;
+    private static final String MSR = &quot;msr&quot;;
+    private static final String ALERT = &quot;alert&quot;;
+    private static final String ALERT_TEXT = &quot;alert_text&quot;;
+    private static final String VALUE = &quot;val&quot;;
+    private static final String FORMATTED_VALUE = &quot;frmt_val&quot;;
+    private static final String STATUS_WARN = &quot;WARN&quot;;
+    private static final String STATUS_ALERT = &quot;ALERT&quot;;
+    private static final String DATE = &quot;date&quot;;
+
+    private String sonarServer;
+    private String sonarProjectName;
+    private String sonarProjectID;
+    private String buildId;
+    private TaskListener listener;
+
+    private String sonarCEAPIUrl;
+    private int ceQueryIntervalInSeconds;
+    private int ceQueryMaxAttempts;
+    private String jenkinsName;
+    private boolean useProxy;
+
+
+    public static final int DEFAULT_QUERY_INTERVAL = 10;
+    public static final int DEFAULT_QUERY_MAX_ATTEMPTS = 30;
+
+    /**
+     * Hide utility-class constructor.
+     */
+//    public SonarBuilder(AbstractBuild&lt;?, ?&gt; build, TaskListener listener, String jenkinsName, String ceQueryIntervalInSeconds, String ceQueryMaxAttempts, String buildId, boolean useProxy) throws IOException, URISyntaxException, ParseException {
+//        this.listener = listener;
+//        this.jenkinsName = jenkinsName;
+//        this.ceQueryIntervalInSeconds = getSafePositiveInteger(ceQueryIntervalInSeconds, DEFAULT_QUERY_INTERVAL);
+//        this.ceQueryMaxAttempts = getSafePositiveInteger(ceQueryMaxAttempts, DEFAULT_QUERY_MAX_ATTEMPTS);
+//        this.buildId = buildId;
+//        this.useProxy = useProxy;
+//        setSonarDetails(build);
+//    }
+
+<span class="nc" id="L94">    public SonarBuilder(Run&lt;?, ?&gt; run, TaskListener listener, String jenkinsName, String ceQueryIntervalInSeconds, String ceQueryMaxAttempts, String buildId, boolean useProxy) throws IOException, URISyntaxException, ParseException {</span>
+<span class="nc" id="L95">        this.listener = listener;</span>
+<span class="nc" id="L96">        this.jenkinsName = jenkinsName;</span>
+<span class="nc" id="L97">        this.ceQueryIntervalInSeconds = getSafePositiveInteger(ceQueryIntervalInSeconds, DEFAULT_QUERY_INTERVAL);</span>
+<span class="nc" id="L98">        this.ceQueryMaxAttempts = getSafePositiveInteger(ceQueryMaxAttempts, DEFAULT_QUERY_MAX_ATTEMPTS);</span>
+<span class="nc" id="L99">        this.buildId = buildId;</span>
+<span class="nc" id="L100">        this.jenkinsName = jenkinsName;</span>
+<span class="nc" id="L101">        this.useProxy = useProxy;</span>
+<span class="nc" id="L102">        setSonarDetails(run);</span>
+
+<span class="nc" id="L104">    }</span>
+
+    private void setSonarDetails(Run run) throws IOException, URISyntaxException, ParseException {
+<span class="nc" id="L107">        String sonarBuildLink = extractSonarProjectURLFromLogs(run);</span>
+<span class="nc bnc" id="L108" title="All 2 branches missed.">        if (!StringUtils.isEmpty(sonarBuildLink)) {</span>
+<span class="nc" id="L109">            this.sonarProjectName = getSonarProjectName(sonarBuildLink);</span>
+<span class="nc" id="L110">            this.sonarServer = sonarBuildLink.substring(0, sonarBuildLink.indexOf(&quot;/dashboard/index/&quot; + this.sonarProjectName));</span>
+<span class="nc" id="L111">            this.sonarProjectID = getSonarProjectID(this.sonarProjectName);</span>
+        }
+        //sonar 5.3 changes
+<span class="nc" id="L114">        String sonarCEAPILink = extractSonarProjectCEUrlFromLogs(run);</span>
+<span class="nc bnc" id="L115" title="All 2 branches missed.">        if (!StringUtils.isEmpty(sonarCEAPILink)) {</span>
+<span class="nc" id="L116">            this.sonarCEAPIUrl = sonarCEAPILink;</span>
+        }
+<span class="nc" id="L118">    }</span>
+
+
+    /**
+     * Keeps polling Sonar's Compute Engine (CE) API to determine status of sonar analysis
+     * From Sonar 5.2+, the final analysis is now an asynchronous and the status
+     * of the sonar analysis needs to be determined from the Sonar CE API
+     *
+     * @param restCall
+     * @return true after Compute Engine has completed processing or it is an old Sonar version.
+     * Else returns false
+     * @throws ParseException
+     */
+    private boolean ceProcessingComplete(RestCall restCall) throws ParseException {
+        // Sonar 5.2+ check if the sonar ce api url exists. If not,
+        // then the project is using old sonar version and hence
+        // request to Compute Engine api is not required.
+<span class="nc bnc" id="L135" title="All 2 branches missed.">        if (StringUtils.isEmpty(this.sonarCEAPIUrl)) {</span>
+            // request to CE API is not required as Sonar Version &lt; 5.2
+<span class="nc" id="L137">            return true;</span>
+        }
+
+        // keep polling Sonar CE API for max configured attempts to fetch
+        // status of sonar analysis. After every attempt if CE API is not yet
+        // ready, sleep for configured interval period.
+        // Return true as soon as the status changes to SUCCESS
+<span class="nc bnc" id="L144" title="All 2 branches missed.">        for (int i = 0; i &lt; this.ceQueryMaxAttempts; i++) {</span>
+            // get the status of sonar analysis using Sonar CE API
+<span class="nc" id="L146">            RestCall.RestCallResponse ceAPIResponse = restCall.makeRestCallGet(this.sonarCEAPIUrl);</span>
+<span class="nc" id="L147">            int responseCodeCEAPI = ceAPIResponse.getResponseCode();</span>
+<span class="nc bnc" id="L148" title="All 2 branches missed.">            if (responseCodeCEAPI == HttpStatus.SC_OK) {</span>
+<span class="nc" id="L149">                String taskStatus = getCETaskStatus(ceAPIResponse.getResponseString());</span>
+<span class="nc bnc" id="L150" title="All 3 branches missed.">                switch (taskStatus) {</span>
+                    case &quot;IN_PROGRESS&quot;:
+                    case &quot;PENDING&quot;:
+                        // Wait the configured interval then retry
+<span class="nc" id="L154">                        listener.getLogger().println(&quot;Waiting for report processing to complete...&quot;);</span>
+                        try {
+<span class="nc" id="L156">                            Thread.sleep(this.ceQueryIntervalInSeconds * 1000);</span>
+<span class="nc" id="L157">                        } catch (InterruptedException ie) {</span>
+<span class="nc" id="L158">                            listener.getLogger().println(&quot;Sonar report processing errored while getting the status...&quot;);</span>
+<span class="nc" id="L159">                            return false;</span>
+<span class="nc" id="L160">                        }</span>
+                        break;
+                    case &quot;SUCCESS&quot;:
+                        // Exit
+<span class="nc" id="L164">                        listener.getLogger().println(&quot;Sonar report processing completed...&quot;);</span>
+<span class="nc" id="L165">                        return true;</span>
+                    default:
+<span class="nc" id="L167">                        listener.getLogger().println(&quot;Hygieia Publisher: Sonar CE API returned bad status: &quot; + taskStatus);</span>
+<span class="nc" id="L168">                        return false;</span>
+                }
+
+<span class="nc" id="L171">            } else {</span>
+<span class="nc" id="L172">                listener.getLogger().println(&quot;Hygieia Publisher: Sonar CE API Connection failed. Response: &quot; + responseCodeCEAPI);</span>
+<span class="nc" id="L173">                return false;</span>
+            }
+        }
+<span class="nc" id="L176">        listener.getLogger().println(&quot;Hygieia Publisher: Sonar CE API could not return response on time.&quot;);</span>
+<span class="nc" id="L177">        return false;</span>
+    }
+
+
+    public CodeQualityCreateRequest getSonarMetrics() throws ParseException {
+<span class="nc bnc" id="L182" title="All 4 branches missed.">        if (StringUtils.isEmpty(sonarServer) || StringUtils.isEmpty(sonarProjectID)) return null;</span>
+<span class="nc" id="L183">        String url = String.format(sonarServer + URL_METRIC_FRAGMENT, sonarProjectID, METRICS);</span>
+<span class="nc" id="L184">        RestCall restCall = new RestCall(useProxy);</span>
+        //sonar 5.2+ changes - CE api
+<span class="nc bnc" id="L186" title="All 2 branches missed.">        if (ceProcessingComplete(restCall)) {</span>
+<span class="nc" id="L187">            RestCall.RestCallResponse callResponse = restCall.makeRestCallGet(url);</span>
+<span class="nc" id="L188">            int responseCode = callResponse.getResponseCode();</span>
+<span class="nc bnc" id="L189" title="All 2 branches missed.">            if (responseCode == HttpStatus.SC_OK) {</span>
+<span class="nc" id="L190">                String resp = callResponse.getResponseString();</span>
+<span class="nc" id="L191">                return buildQualityRequest(resp);</span>
+            }
+<span class="nc" id="L193">            listener.getLogger().println(&quot;Hygieia Publisher: Sonar Connection Failed. Response: &quot; + responseCode);</span>
+<span class="nc" id="L194">            return null;</span>
+        } else {
+<span class="nc" id="L196">            listener.getLogger().println(&quot;Hygieia Publisher: Sonar Compute Engine API Failed. &quot;);</span>
+<span class="nc" id="L197">            return null;</span>
+        }
+
+    }
+
+    /***
+     * Parses the task status as returned from Sonar's CE API
+     * @param ceTaskResponse
+     * @return value of status element in the CE API Response
+     * @throws org.json.simple.parser.ParseException
+     */
+    private String getCETaskStatus(String ceTaskResponse) throws org.json.simple.parser.ParseException {
+<span class="nc" id="L209">        JSONObject ceTaskResponseObject = (JSONObject) new org.json.simple.parser.JSONParser().parse(ceTaskResponse);</span>
+<span class="nc" id="L210">        JSONObject task = (JSONObject) ceTaskResponseObject.get(&quot;task&quot;);</span>
+<span class="nc" id="L211">        return str(task, &quot;status&quot;);</span>
+    }
+
+    private CodeQualityCreateRequest buildQualityRequest(String json) throws ParseException {
+<span class="nc" id="L215">        JSONArray jsonArray = (JSONArray) new JSONParser().parse(json);</span>
+<span class="nc bnc" id="L216" title="All 2 branches missed.">        if (!jsonArray.isEmpty()) {</span>
+<span class="nc" id="L217">            JSONObject prjData = (JSONObject) jsonArray.get(0);</span>
+<span class="nc" id="L218">            CodeQualityCreateRequest codeQuality = new CodeQualityCreateRequest();</span>
+<span class="nc" id="L219">            codeQuality.setProjectName(str(prjData, NAME));</span>
+<span class="nc" id="L220">            codeQuality.setProjectUrl(sonarServer + &quot;/dashboard/index/&quot; + sonarProjectID);</span>
+<span class="nc" id="L221">            codeQuality.setNiceName(jenkinsName);</span>
+<span class="nc" id="L222">            codeQuality.setType(CodeQualityType.StaticAnalysis);</span>
+<span class="nc" id="L223">            codeQuality.setTimestamp(timestamp(prjData, DATE));</span>
+<span class="nc" id="L224">            codeQuality.setProjectVersion(str(prjData, VERSION));</span>
+<span class="nc" id="L225">            codeQuality.setHygieiaId(buildId);</span>
+<span class="nc" id="L226">            codeQuality.setProjectId(sonarProjectID);</span>
+<span class="nc" id="L227">            codeQuality.setServerUrl(sonarServer);</span>
+<span class="nc bnc" id="L228" title="All 2 branches missed.">            for (Object metricObj : (JSONArray) prjData.get(MSR)) {</span>
+<span class="nc" id="L229">                JSONObject metricJson = (JSONObject) metricObj;</span>
+<span class="nc" id="L230">                CodeQualityMetric metric = new CodeQualityMetric(str(metricJson, KEY));</span>
+
+
+                // if data element is set, set data into value property
+                // this usually happens for custom metrics
+<span class="nc bnc" id="L235" title="All 2 branches missed.">                if (metricJson.get(&quot;data&quot;) != null) {</span>
+<span class="nc" id="L236">                    metric.setFormattedValue(metricJson.get(&quot;data&quot;).toString());</span>
+<span class="nc" id="L237">                    metric.setValue(metricJson.get(&quot;data&quot;));</span>
+<span class="nc bnc" id="L238" title="All 2 branches missed.">                } else if (metric.getName().startsWith(&quot;new_&quot;)) {</span>
+                    // for new  metrics- use var2 and fvar2
+                    // this is because var2 and fvar2 represents values since
+                    // last analysis
+<span class="nc bnc" id="L242" title="All 4 branches missed.">                    if (metricJson.get(&quot;var2&quot;) != null || metricJson.get(&quot;fvar2&quot;) != null) {</span>
+<span class="nc" id="L243">                        metric.setValue(metricJson.get(&quot;var2&quot;));</span>
+<span class="nc" id="L244">                        metric.setFormattedValue(str(metricJson, &quot;fvar2&quot;));</span>
+                    }
+                } else {
+                    // for other regular metrics - use default fields
+<span class="nc" id="L248">                    metric.setValue(metricJson.get(VALUE));</span>
+<span class="nc" id="L249">                    metric.setFormattedValue(str(metricJson, FORMATTED_VALUE));</span>
+                }
+<span class="nc" id="L251">                metric.setStatus(metricStatus(str(metricJson, ALERT)));</span>
+<span class="nc" id="L252">                metric.setStatusMessage(str(metricJson, ALERT_TEXT));</span>
+<span class="nc" id="L253">                codeQuality.getMetrics().add(metric);</span>
+<span class="nc" id="L254">            }</span>
+<span class="nc" id="L255">            return codeQuality;</span>
+        }
+<span class="nc" id="L257">        return null;</span>
+    }
+
+    private long timestamp(JSONObject json, String key) {
+<span class="nc" id="L261">        Object obj = json.get(key);</span>
+<span class="nc bnc" id="L262" title="All 2 branches missed.">        if (obj != null) {</span>
+            try {
+<span class="nc" id="L264">                return new SimpleDateFormat(DATE_FORMAT).parse(obj.toString()).getTime();</span>
+<span class="nc" id="L265">            } catch (java.text.ParseException e) {</span>
+<span class="nc" id="L266">                logger.warning(obj + &quot; is not in expected format &quot; + DATE_FORMAT + e);</span>
+            }
+        }
+<span class="nc" id="L269">        return 0;</span>
+    }
+
+    private CodeQualityMetricStatus metricStatus(String status) {
+<span class="nc bnc" id="L273" title="All 2 branches missed.">        if (StringUtils.isBlank(status)) {</span>
+<span class="nc" id="L274">            return CodeQualityMetricStatus.Ok;</span>
+        }
+<span class="nc bnc" id="L276" title="All 2 branches missed.">        if (status.equalsIgnoreCase(STATUS_WARN)) {</span>
+<span class="nc" id="L277">            return CodeQualityMetricStatus.Warning;</span>
+        }
+<span class="nc bnc" id="L279" title="All 2 branches missed.">        if (status.equalsIgnoreCase(STATUS_WARN)) {</span>
+<span class="nc" id="L280">            return CodeQualityMetricStatus.Alert;</span>
+        }
+<span class="nc" id="L282">        return CodeQualityMetricStatus.Ok;</span>
+
+    }
+
+    /**
+     * Read logs of the build to find URL of the project dashboard in Sonar
+     */
+    private String extractSonarProjectURLFromLogs(Run run) throws IOException {
+<span class="nc" id="L290">        return getSonarUrl(run.getLogReader(), URL_PATTERN_IN_LOGS);</span>
+    }
+
+
+    /**
+     * Sonar 5.3 Changes: As per changes in Sonar 5.3 onwards, the sonar analysis update on server
+     * is now processed asynchronously on server. Sonar provides an API called Compute Engine (CE)
+     * whihc needs to be polled regularly to determine status of the analysis. URL of CE API can be taken from logs
+     */
+    public String extractSonarProjectCEUrlFromLogs(Run run) throws IOException {
+<span class="nc" id="L300">        return getSonarUrl(run.getLogReader(), CE_URL_PATTERN_IN_LOGS);</span>
+    }
+
+    private String getSonarUrl(Reader reader, String pattern) throws IOException {
+<span class="nc" id="L304">        BufferedReader br = null;</span>
+<span class="nc" id="L305">        String url = null;</span>
+        try {
+<span class="nc" id="L307">            br = new BufferedReader(reader);</span>
+            String strLine;
+<span class="nc" id="L309">            Pattern p = Pattern.compile(pattern);</span>
+<span class="nc bnc" id="L310" title="All 2 branches missed.">            while ((strLine = br.readLine()) != null) {</span>
+<span class="nc" id="L311">                Matcher match = p.matcher(strLine);</span>
+<span class="nc bnc" id="L312" title="All 2 branches missed.">                if (match.matches()) {</span>
+<span class="nc" id="L313">                    url = match.group(1);</span>
+                }
+<span class="nc" id="L315">            }</span>
+        } finally {
+<span class="nc" id="L317">            IOUtils.closeQuietly(br);</span>
+        }
+<span class="nc" id="L319">        return url;</span>
+    }
+
+    private String getSonarProjectName(String url) throws URISyntaxException {
+<span class="nc" id="L323">        URI uri = new URI(url);</span>
+<span class="nc" id="L324">        String[] segments = uri.getPath().split(&quot;/&quot;);</span>
+<span class="nc bnc" id="L325" title="All 2 branches missed.">        if (segments.length &gt; 1) {</span>
+<span class="nc" id="L326">            return segments[segments.length - 1];</span>
+<span class="nc" id="L327">        } else return &quot;&quot;;</span>
+    }
+
+    private String getSonarProjectID(String project) throws IOException, URISyntaxException, ParseException {
+<span class="nc" id="L331">        String url = String.format(sonarServer + URL_PROJECT_ID_FRAGMENT, project);</span>
+<span class="nc" id="L332">        RestCall restCall = new RestCall(useProxy);</span>
+<span class="nc" id="L333">        RestCall.RestCallResponse callResponse = restCall.makeRestCallGet(url);</span>
+<span class="nc" id="L334">        int responseCode = callResponse.getResponseCode();</span>
+<span class="nc bnc" id="L335" title="All 2 branches missed.">        if (responseCode == HttpStatus.SC_OK) {</span>
+<span class="nc" id="L336">            String resp = callResponse.getResponseString();</span>
+<span class="nc" id="L337">            JSONArray arr = (JSONArray) new JSONParser().parse(resp);</span>
+<span class="nc" id="L338">            JSONObject obj = (JSONObject) arr.get(0);</span>
+<span class="nc" id="L339">            return str(obj, &quot;id&quot;);</span>
+        }
+<span class="nc" id="L341">        logger.log(Level.WARNING, &quot;Hygieia getSonarProjectID Failed. Response: &quot; + responseCode);</span>
+<span class="nc" id="L342">        return &quot;&quot;;</span>
+    }
+
+    private String str(JSONObject json, String key) {
+<span class="nc" id="L346">        Object obj = json.get(key);</span>
+<span class="nc bnc" id="L347" title="All 2 branches missed.">        return obj == null ? null : obj.toString();</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.0.201801022044</span></div></body></html>

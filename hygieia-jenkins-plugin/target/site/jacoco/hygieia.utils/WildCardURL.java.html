@@ -1,0 +1,225 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="zh"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>WildCardURL.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Hygieia Publisher Plugin</a> &gt; <a href="index.source.html" class="el_package">hygieia.utils</a> &gt; <span class="el_source">WildCardURL.java</span></div><h1>WildCardURL.java</h1><pre class="source lang-java linenums">package hygieia.utils;
+
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.util.HashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+/**
+ * Copied this code from http://www.leghumped.com/2008/11/03/java-matching-urls-with-regex-wildcards/
+ * Thank You!!!!
+ */
+
+public final class WildCardURL implements java.io.Serializable {
+    private String protocol,
+            user,
+            password,
+            host,
+            directory,
+            file,
+            query,
+            ref;
+<span class="nc" id="L23">    private int port = -1;</span>
+
+<span class="nc" id="L25">    public WildCardURL(String url) {</span>
+<span class="nc" id="L26">        HashMap&lt;String, String&gt; tempUri = new HashMap&lt;String, String&gt;(14);</span>
+<span class="nc" id="L27">        String[] parts = {&quot;source&quot;,&quot;protocol&quot;,&quot;authority&quot;,&quot;userInfo&quot;,&quot;user&quot;,&quot;password&quot;,&quot;host&quot;,&quot;port&quot;,&quot;relative&quot;,&quot;path&quot;,&quot;directory&quot;,&quot;file&quot;,&quot;query&quot;,&quot;ref&quot;};</span>
+<span class="nc" id="L28">        boolean strictMode = false;</span>
+        Pattern pattern;
+<span class="nc bnc" id="L30" title="All 2 branches missed.">        if(strictMode) {</span>
+<span class="nc" id="L31">            pattern = Pattern.compile(&quot;^(?:([^:/?#]+):)?(?://((?:(([^:@]*):?([^:@]*))?@)?([^:/?#]*)(?::(\\d*))?))?((((?:[^?#/]*/)*)([^?#]*))(?:\\?([^#]*))?(?:#(.*))?)&quot;);</span>
+        } else {
+<span class="nc" id="L33">            pattern = Pattern.compile(&quot;^(?:(?![^:@]+:[^:@/]*@)([^:/?#.]+):)?(?://)?((?:(([^:@]*):?([^:@]*))?@)?([^:/?#]*)(?::(\\d*))?)(((/(?:[^?#](?![^?#/]*\\.[^?#/.]+(?:[?#]|$)))*/?)?([^?#/]*))(?:\\?([^#]*))?(?:#(.*))?)&quot;);</span>
+        }
+
+<span class="nc" id="L36">        Matcher matcher = pattern.matcher(url);</span>
+        String match;
+<span class="nc bnc" id="L38" title="All 2 branches missed.">        if(matcher.find()) {</span>
+<span class="nc bnc" id="L39" title="All 2 branches missed.">            for(int i=0;i&lt;14;i++) {</span>
+                try {
+<span class="nc" id="L41">                    match = matcher.group(i);</span>
+<span class="nc" id="L42">                } catch(Exception ex) {</span>
+<span class="nc" id="L43">                    match = &quot;*&quot;;</span>
+<span class="nc" id="L44">                }</span>
+<span class="nc bnc" id="L45" title="All 2 branches missed.">                tempUri.put(parts[i],  match == null ? &quot;*&quot; : match);</span>
+            }
+        }
+<span class="nc" id="L48">        this.protocol = tempUri.get(&quot;protocol&quot;);</span>
+<span class="nc" id="L49">        this.user = tempUri.get(&quot;user&quot;);</span>
+<span class="nc" id="L50">        this.password = tempUri.get(&quot;password&quot;);</span>
+<span class="nc" id="L51">        this.host = tempUri.get(&quot;host&quot;);</span>
+<span class="nc" id="L52">        this.directory = tempUri.get(&quot;directory&quot;);</span>
+<span class="nc" id="L53">        this.file = tempUri.get(&quot;file&quot;);</span>
+<span class="nc" id="L54">        this.query = tempUri.get(&quot;query&quot;);</span>
+<span class="nc" id="L55">        this.ref = tempUri.get(&quot;ref&quot;);</span>
+        try {
+<span class="nc" id="L57">            this.port = Integer.parseInt(tempUri.get(&quot;port&quot;));</span>
+<span class="nc" id="L58">        } catch(NumberFormatException ignore) {}</span>
+<span class="nc" id="L59">    }</span>
+
+    /**
+     * Gets the userInfo part of this &lt;code&gt;URL&lt;/code&gt;.
+     * Eg: user:pass
+     * @return The userInfo part of this &lt;code&gt;URL&lt;/code&gt;
+     */
+    public String getUserInfo() {
+<span class="nc bnc" id="L67" title="All 2 branches missed.">        return user + (&quot;*&quot;.equals(password) ? &quot;&quot; : &quot;:&quot;+password);</span>
+    }
+
+    /**
+     * Gets the protocol name of this &lt;code&gt;URL&lt;/code&gt;.
+     * Eg: http
+     * @return The protocol of this &lt;code&gt;URL&lt;/code&gt;.
+     */
+    public String getProtocol() {
+<span class="nc" id="L76">        return protocol;</span>
+    }
+
+    /**
+     * Gets the host name of this &lt;code&gt;URL&lt;/code&gt;.
+     * Eg: www.lime49.com
+     * @return The host name of this &lt;code&gt;URL&lt;/code&gt;.
+     */
+    public String getHost() {
+<span class="nc" id="L85">        return host;</span>
+    }
+
+    /**
+     * Gets the authority part of this &lt;code&gt;URL&lt;/code&gt; (the domain).
+     * Eg: www.lime49.com OR user:pwd@domain.com
+     * @return The authority part of this &lt;code&gt;URL&lt;/code&gt;
+     */
+    public String getAuthority() {
+<span class="nc" id="L94">        String userInfo = getUserInfo();</span>
+<span class="nc" id="L95">        StringBuffer auth = new StringBuffer();</span>
+<span class="nc bnc" id="L96" title="All 2 branches missed.">        if(!&quot;*&quot;.equals(userInfo)) {</span>
+<span class="nc" id="L97">            auth.append(userInfo).append(&quot;@&quot;);</span>
+        }
+<span class="nc" id="L99">        auth.append('@').append(host).append(':').append(port);</span>
+<span class="nc" id="L100">        return auth.toString();</span>
+    }
+
+    /**
+     * Gets the port number of this &lt;code&gt;URL&lt;/code&gt;.
+     * @return The port number, or -1 if the port is not set
+     */
+    public int getPort() {
+<span class="nc" id="L108">        return port;</span>
+    }
+
+    /**
+     * Gets the directory of this &lt;code&gt;URL&lt;/code&gt;.
+     * Eg: /some/directory
+     * @return The directory of this &lt;code&gt;URL&lt;/code&gt;
+     */
+    public String getDirectory() {
+<span class="nc" id="L117">        return directory;</span>
+    }
+
+    /**
+     * Gets the file name of this &lt;code&gt;URL&lt;/code&gt;.
+     * Eg: file.php
+     * @return The file name of this &lt;code&gt;URL&lt;/code&gt;
+     */
+    public String getFile() {
+<span class="nc" id="L126">        return file;</span>
+    }
+
+    /**
+     * Gets the path part of this &lt;code&gt;URL&lt;/code&gt;.
+     * Eg: /some/directory/file.php
+     * @return The path part of this &lt;code&gt;URL&lt;/code&gt;, or an empty string if one does not exist
+     */
+    public String getPath() {
+<span class="nc" id="L135">        return directory+file;</span>
+    }
+
+    /**
+     * Gets the userInfo part of this &lt;code&gt;URL&lt;/code&gt;.
+     * Eg: var1name=val1&amp;var2name=val2
+     * @return The query part of this URL
+     */
+    public String getQuery() {
+<span class="nc" id="L144">        return query;</span>
+    }
+
+    /**
+     * Gets the anchor (also known as the &quot;reference&quot;) of this &lt;code&gt;URL&lt;/code&gt; (the part after the hash).
+     * Eg: anchor
+     * @return The anchor (also known as the &quot;reference&quot;)
+     */
+    public String getRef() {
+<span class="nc" id="L153">        return ref;</span>
+    }
+
+    /**
+     * Gets whether or not the specified URL matches this WildcardURL
+     * @param url The URL to check.
+     * @return &lt;code&gt;True&lt;/code&gt; if the protocol, domain, directory and path match the specified URL, otherwise &lt;code&gt;false&lt;/code&gt;
+     */
+    public boolean matches(URL url) {
+<span class="nc" id="L162">        boolean matches = false;</span>
+<span class="nc bnc" id="L163" title="All 6 branches missed.">        if(wildcardMatches(protocol, url.getProtocol()) &amp;&amp; wildcardMatches(host, url.getHost()) &amp;&amp; wildcardMatches(getPath(), url.getPath())) {</span>
+<span class="nc" id="L164">            matches = true;</span>
+        }
+        //System.out.println((wildcardMatches(protocol, url.getProtocol()) ? &quot;t&quot;:&quot;Dockerfile&quot;) +&quot;-&quot;+  (wildcardMatches(host, url.getHost()) ? &quot;t&quot;:&quot;Dockerfile&quot;) +&quot;-&quot; + (wildcardMatches(getPath(), url.getPath()) ? 't' : 'Dockerfile'));
+<span class="nc" id="L167">        return matches;</span>
+    }
+
+    /**
+     * Gets whether or not the specified URL matches this WildcardURL
+     * @param sUrl The URL to check.
+     * @return &lt;code&gt;True&lt;/code&gt; if the protocol, domain, directory and path match the specified URL, otherwise &lt;code&gt;false&lt;/code&gt;
+     */
+    public boolean matches(String sUrl) {
+<span class="nc" id="L176">        URL url = null;</span>
+        try {
+<span class="nc" id="L178">            url = new URL(sUrl);</span>
+<span class="nc" id="L179">        } catch (MalformedURLException e) {</span>
+            //ignore, just return false
+<span class="nc" id="L181">            return false;</span>
+<span class="nc" id="L182">        }</span>
+<span class="nc" id="L183">        return matches(url);</span>
+    }
+
+    /**
+     * Gets whether a string matches a wildcard pattern. The following would be considered to be matches:
+     *      &lt;code&gt;*pattern   somepattern&lt;/code&gt;
+     *      &lt;code&gt;pattern*   patternsome&lt;/code&gt;
+     *      &lt;code&gt;*pattern*  somepatternsome&lt;/code&gt;
+     * @param pattern The pattern to check, wildcards must be at either the start, end or both, but not in the middle.
+     * @param stringToMatch The string to check
+     * @return &lt;code&gt;True&lt;/code&gt; if the wildcard matches the pattern, otherwise &lt;code&gt;false&lt;/code&gt;
+     */
+    private boolean wildcardMatches(String pattern, String stringToMatch) {
+<span class="nc" id="L196">        boolean match = false;</span>
+<span class="nc" id="L197">        int length = pattern.length();</span>
+<span class="nc bnc" id="L198" title="All 2 branches missed.">        if(pattern.charAt(0) == '*') {</span>
+<span class="nc bnc" id="L199" title="All 2 branches missed.">            if(length == 1) {</span>
+<span class="nc" id="L200">                match = true; // *</span>
+<span class="nc bnc" id="L201" title="All 6 branches missed.">            } else if(pattern.charAt(length-1) == '*' &amp;&amp; length &gt; 2 &amp;&amp; stringToMatch.contains(pattern.substring(1, length-3).toLowerCase())) {</span>
+<span class="nc" id="L202">                match = true; // *match*</span>
+<span class="nc bnc" id="L203" title="All 4 branches missed.">            } else if(length &gt; 1 &amp;&amp; stringToMatch.endsWith(pattern.substring(1).toLowerCase())) {</span>
+<span class="nc" id="L204">                match = true; // *match</span>
+            }
+<span class="nc bnc" id="L206" title="All 4 branches missed.">        } else if(pattern.charAt(length-1) == '*' &amp;&amp; stringToMatch.startsWith(pattern.substring(0, length-2).toLowerCase())) {</span>
+<span class="nc" id="L207">            match = true; // match*</span>
+<span class="nc bnc" id="L208" title="All 2 branches missed.">        } else if(pattern.equalsIgnoreCase(stringToMatch)) { // match</span>
+<span class="nc" id="L209">            match = true;</span>
+        }
+<span class="nc" id="L211">        return match;</span>
+    }
+
+    public String toString() {
+<span class="nc" id="L215">        return protocol+&quot;://&quot;+</span>
+<span class="nc bnc" id="L216" title="All 2 branches missed.">                getUserInfo()+</span>
+                //user+(password.equals(&quot;*&quot;) ? &quot;&quot; : &quot;:&quot;+password)+(!user.equals(&quot;*&quot;) &amp;&amp; !password.equals(&quot;*&quot;) ? &quot;@&quot;:&quot;&quot;)+
+                host+
+                (port == -1?&quot;&quot;:&quot;:&quot;+port)+
+<span class="nc" id="L220">                getPath()+</span>
+                query+
+<span class="nc bnc" id="L222" title="All 2 branches missed.">                (&quot;*&quot;.equals(ref)?&quot;&quot;:&quot;#&quot;+ref);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.0.201801022044</span></div></body></html>

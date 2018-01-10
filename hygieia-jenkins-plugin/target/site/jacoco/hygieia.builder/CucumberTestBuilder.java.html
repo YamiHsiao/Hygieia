@@ -1,0 +1,276 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="zh"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>CucumberTestBuilder.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Hygieia Publisher Plugin</a> &gt; <a href="index.source.html" class="el_package">hygieia.builder</a> &gt; <span class="el_source">CucumberTestBuilder.java</span></div><h1>CucumberTestBuilder.java</h1><pre class="source lang-java linenums">package hygieia.builder;
+
+import com.capitalone.dashboard.model.*;
+import com.capitalone.dashboard.request.BuildDataCreateRequest;
+import com.capitalone.dashboard.request.TestDataCreateRequest;
+import hudson.EnvVars;
+import hudson.FilePath;
+import hudson.model.AbstractBuild;
+import hudson.model.BuildListener;
+import hudson.model.Run;
+import hudson.model.TaskListener;
+import hygieia.transformer.CucumberJsonToTestResultTransformer;
+import hygieia.utils.HygieiaUtils;
+import jenkins.plugins.hygieia.HygieiaPublisher;
+import org.json.simple.JSONArray;
+import org.json.simple.JSONObject;
+import org.json.simple.parser.JSONParser;
+import org.json.simple.parser.ParseException;
+
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.logging.Logger;
+
+
+public class CucumberTestBuilder {
+<span class="nc" id="L28">    private static final Logger logger = Logger.getLogger(CucumberTestBuilder.class.getName());</span>
+//    private AbstractBuild build;
+//    private HygieiaPublisher publisher;
+    private Run run;
+    private TaskListener listener;
+    private String buildId;
+    private TestResult testResult;
+
+    private FilePath rootDirectory;
+    private String filePattern;
+    private String jenkinsName;
+    private String testType;
+    private String applicationName;
+    private String environmentName;
+    BuildDataCreateRequest buildDataCreateRequest;
+
+<span class="nc" id="L44">    public CucumberTestBuilder(AbstractBuild build, TaskListener listener, String applicationName, String environmentName, String testType, String filePattern, String directory, String jenkinsName, String buildId) {</span>
+<span class="nc" id="L45">        run = build;</span>
+<span class="nc" id="L46">        BuildBuilder buildBuilder = new BuildBuilder(build,jenkinsName,listener,true,false);</span>
+<span class="nc" id="L47">        this.buildDataCreateRequest = buildBuilder.getBuildData();</span>
+<span class="nc" id="L48">        this.buildId = buildId;</span>
+<span class="nc" id="L49">        this.listener = listener;</span>
+<span class="nc" id="L50">        this.applicationName = applicationName.trim();</span>
+<span class="nc" id="L51">        this.environmentName = environmentName.trim();</span>
+<span class="nc" id="L52">        this.testType = testType;</span>
+<span class="nc" id="L53">        this.filePattern = filePattern.trim();</span>
+<span class="nc" id="L54">        this.jenkinsName = jenkinsName.trim();</span>
+<span class="nc" id="L55">        rootDirectory = build.getWorkspace().withSuffix(directory);</span>
+<span class="nc" id="L56">        buildTestResults();</span>
+<span class="nc" id="L57">    }</span>
+
+
+<span class="nc" id="L60">    public CucumberTestBuilder(Run run, TaskListener listener, BuildStatus buildStatus, FilePath filePath, String applicationName, String environmentName, String testType, String filePattern, String directory, String jenkinsName, String buildId) {</span>
+<span class="nc" id="L61">        this.run = run;</span>
+<span class="nc" id="L62">        this.buildId = buildId;</span>
+<span class="nc" id="L63">        BuildBuilder buildBuilder = new BuildBuilder(run,jenkinsName, listener, buildStatus, false);</span>
+<span class="nc" id="L64">        this.buildDataCreateRequest = buildBuilder.getBuildData();</span>
+<span class="nc" id="L65">        this.listener = listener;</span>
+<span class="nc" id="L66">        this.applicationName = applicationName.trim();</span>
+<span class="nc" id="L67">        this.environmentName = environmentName.trim();</span>
+<span class="nc" id="L68">        this.testType = testType;</span>
+<span class="nc" id="L69">        this.filePattern = filePattern.trim();</span>
+<span class="nc" id="L70">        rootDirectory = filePath.withSuffix(directory);</span>
+<span class="nc" id="L71">        this.jenkinsName = jenkinsName.trim();</span>
+<span class="nc" id="L72">        buildTestResults();</span>
+<span class="nc" id="L73">    }</span>
+
+    private void buildTestResults() {
+
+<span class="nc" id="L77">        List&lt;FilePath&gt; testFiles = null;</span>
+        try {
+<span class="nc" id="L79">            EnvVars envVars = new EnvVars();</span>
+<span class="nc" id="L80">            envVars = run.getEnvironment(listener);</span>
+<span class="nc" id="L81">            filePattern = envVars.expand(filePattern);</span>
+<span class="nc" id="L82">            testFiles = HygieiaUtils.getArtifactFiles(rootDirectory, filePattern, new ArrayList&lt;FilePath&gt;());</span>
+<span class="nc" id="L83">            listener.getLogger().println(&quot;Hygieia Test Result Publisher - Looking for file pattern '&quot; + filePattern + &quot;' in directory &quot; + rootDirectory.getRemote());</span>
+<span class="nc" id="L84">        } catch (IOException e) {</span>
+<span class="nc" id="L85">            e.printStackTrace();</span>
+<span class="nc" id="L86">            listener.getLogger().println(&quot;Hygieia Test Result Publisher&quot; + e.getStackTrace());</span>
+<span class="nc" id="L87">        } catch (InterruptedException e) {</span>
+<span class="nc" id="L88">            e.printStackTrace();</span>
+<span class="nc" id="L89">            listener.getLogger().println(&quot;Hygieia Test Result Publisher - InterruptedException on &quot; + e.getStackTrace());</span>
+<span class="nc" id="L90">        }</span>
+<span class="nc" id="L91">        testResult = buildTestResultObject(getCapabilities(testFiles));</span>
+<span class="nc" id="L92">    }</span>
+
+    private List&lt;TestCapability&gt; getCapabilities(List&lt;FilePath&gt; testFiles) {
+<span class="nc" id="L95">        List&lt;TestCapability&gt; capabilities = new ArrayList&lt;&gt;();</span>
+<span class="nc" id="L96">        JSONParser parser = new JSONParser();</span>
+<span class="nc" id="L97">        CucumberJsonToTestResultTransformer cucumberTransformer = new CucumberJsonToTestResultTransformer();</span>
+<span class="nc bnc" id="L98" title="All 2 branches missed.">        for (FilePath file : testFiles) {</span>
+            try {
+<span class="nc" id="L100">                listener.getLogger().println(&quot;Hygieia Test Publisher: Processing file: &quot; + file.getRemote());</span>
+<span class="nc" id="L101">                JSONArray cucumberJson = (JSONArray) parser.parse(file.readToString());</span>
+<span class="nc" id="L102">                TestCapability cap = new TestCapability();</span>
+<span class="nc" id="L103">                cap.setType(TestSuiteType.Functional);</span>
+<span class="nc" id="L104">                List&lt;TestSuite&gt; testSuites = cucumberTransformer.transformer(cucumberJson);</span>
+<span class="nc" id="L105">                cap.setDescription(getCapabilityDescription(file));</span>
+
+<span class="nc" id="L107">                cap.getTestSuites().addAll(testSuites); //add test suites</span>
+<span class="nc" id="L108">                long duration = 0;</span>
+<span class="nc" id="L109">                int testSuiteSkippedCount = 0, testSuiteSuccessCount = 0, testSuiteFailCount = 0, testSuiteUnknownCount = 0;</span>
+<span class="nc bnc" id="L110" title="All 2 branches missed.">                for (TestSuite t : testSuites) {</span>
+<span class="nc" id="L111">                    duration += t.getDuration();</span>
+<span class="nc bnc" id="L112" title="All 4 branches missed.">                    switch (t.getStatus()) {</span>
+                        case Success:
+<span class="nc" id="L114">                            testSuiteSuccessCount++;</span>
+<span class="nc" id="L115">                            break;</span>
+                        case Failure:
+<span class="nc" id="L117">                            testSuiteFailCount++;</span>
+<span class="nc" id="L118">                            break;</span>
+                        case Skipped:
+<span class="nc" id="L120">                            testSuiteSkippedCount++;</span>
+<span class="nc" id="L121">                            break;</span>
+                        default:
+<span class="nc" id="L123">                            testSuiteUnknownCount++;</span>
+                            break;
+                    }
+<span class="nc" id="L126">                }</span>
+<span class="nc bnc" id="L127" title="All 2 branches missed.">                if (testSuiteFailCount &gt; 0) {</span>
+<span class="nc" id="L128">                    cap.setStatus(TestCaseStatus.Failure);</span>
+<span class="nc bnc" id="L129" title="All 2 branches missed.">                } else if (testSuiteSkippedCount &gt; 0) {</span>
+<span class="nc" id="L130">                    cap.setStatus(TestCaseStatus.Skipped);</span>
+<span class="nc bnc" id="L131" title="All 2 branches missed.">                } else if (testSuiteSuccessCount &gt; 0) {</span>
+<span class="nc" id="L132">                    cap.setStatus(TestCaseStatus.Success);</span>
+                } else {
+<span class="nc" id="L134">                    cap.setStatus(TestCaseStatus.Unknown);</span>
+                }
+<span class="nc" id="L136">                cap.setFailedTestSuiteCount(testSuiteFailCount);</span>
+<span class="nc" id="L137">                cap.setSkippedTestSuiteCount(testSuiteSkippedCount);</span>
+<span class="nc" id="L138">                cap.setSuccessTestSuiteCount(testSuiteSuccessCount);</span>
+<span class="nc" id="L139">                cap.setUnknownStatusTestSuiteCount(testSuiteUnknownCount);</span>
+<span class="nc" id="L140">                cap.setTotalTestSuiteCount(testSuites.size());</span>
+<span class="nc" id="L141">                cap.setDuration(duration);</span>
+<span class="nc" id="L142">                cap.setExecutionId(String.valueOf(buildDataCreateRequest.getNumber()));</span>
+<span class="nc" id="L143">                capabilities.add(cap);</span>
+<span class="nc" id="L144">            } catch (FileNotFoundException e) {</span>
+<span class="nc" id="L145">                listener.getLogger().println(&quot;Hygieia Publisher: Test File Not Found: &quot; + file.getRemote());</span>
+<span class="nc" id="L146">            } catch (ParseException e) {</span>
+<span class="nc" id="L147">                listener.getLogger().println(&quot;Hygieia Publisher: Error Parsing File: &quot; + file.getRemote());</span>
+<span class="nc" id="L148">            } catch (IOException e) {</span>
+<span class="nc" id="L149">                listener.getLogger().println(&quot;Hygieia Publisher: Error Reading File: &quot; + file.getName());</span>
+<span class="nc" id="L150">            } catch (InterruptedException e) {</span>
+<span class="nc" id="L151">                listener.getLogger().println(&quot;Hygieia Publisher: Error Reading File: &quot; + file.getName());</span>
+<span class="nc" id="L152">            }</span>
+<span class="nc" id="L153">        }</span>
+<span class="nc" id="L154">        return capabilities;</span>
+    }
+
+    private static String getCapabilityDescription(FilePath file) {
+<span class="nc" id="L158">        String newFileName = file.getRemote().replace(file.getName(), &quot;&quot;);</span>
+<span class="nc" id="L159">        boolean isUnix = newFileName.endsWith(&quot;/&quot;);</span>
+        int lastFolderIndex;
+<span class="nc" id="L161">        newFileName = newFileName.substring(0, newFileName.length() - 1);</span>
+<span class="nc bnc" id="L162" title="All 2 branches missed.">        if (isUnix) {</span>
+<span class="nc" id="L163">            lastFolderIndex = newFileName.lastIndexOf(&quot;/&quot;);</span>
+        } else {
+<span class="nc" id="L165">            lastFolderIndex = newFileName.lastIndexOf(&quot;\\&quot;);</span>
+        }
+<span class="nc bnc" id="L167" title="All 2 branches missed.">        if (lastFolderIndex &gt; 0) {</span>
+<span class="nc" id="L168">            return newFileName.substring(lastFolderIndex);</span>
+        }
+<span class="nc" id="L170">        return newFileName;</span>
+    }
+
+
+    private TestResult buildTestResultObject(List&lt;TestCapability&gt; capabilities) {
+<span class="nc bnc" id="L175" title="All 2 branches missed.">        if (!capabilities.isEmpty()) {</span>
+            // There are test suites so let's construct a TestResult to encapsulate these results
+<span class="nc" id="L177">            TestResult testResult = new TestResult();</span>
+<span class="nc" id="L178">            testResult.setType(TestSuiteType.fromString(testType));</span>
+<span class="nc" id="L179">            testResult.setDescription(buildDataCreateRequest.getJobName());</span>
+<span class="nc" id="L180">            testResult.setExecutionId(String.valueOf(buildDataCreateRequest.getNumber()));</span>
+<span class="nc" id="L181">            testResult.setUrl(buildDataCreateRequest.getBuildUrl() + String.valueOf(buildDataCreateRequest.getNumber()) + &quot;/&quot;);</span>
+<span class="nc" id="L182">            testResult.setDuration(buildDataCreateRequest.getDuration());</span>
+<span class="nc" id="L183">            testResult.setEndTime(buildDataCreateRequest.getStartTime() + buildDataCreateRequest.getDuration());</span>
+<span class="nc" id="L184">            testResult.setStartTime(buildDataCreateRequest.getStartTime());</span>
+<span class="nc" id="L185">            testResult.getTestCapabilities().addAll(capabilities);  //add all capabilities</span>
+<span class="nc" id="L186">            testResult.setTotalCount(capabilities.size());</span>
+<span class="nc" id="L187">            testResult.setTimestamp(System.currentTimeMillis());</span>
+<span class="nc" id="L188">            int testCapabilitySkippedCount = 0, testCapabilitySuccessCount = 0, testCapabilityFailCount = 0;</span>
+<span class="nc" id="L189">            int testCapabilityUnknownCount = 0;</span>
+            // Calculate counts based on test suites
+<span class="nc bnc" id="L191" title="All 2 branches missed.">            for (TestCapability cap : capabilities) {</span>
+<span class="nc bnc" id="L192" title="All 4 branches missed.">                switch (cap.getStatus()) {</span>
+                    case Success:
+<span class="nc" id="L194">                        testCapabilitySuccessCount++;</span>
+<span class="nc" id="L195">                        break;</span>
+                    case Failure:
+<span class="nc" id="L197">                        testCapabilityFailCount++;</span>
+<span class="nc" id="L198">                        break;</span>
+                    case Skipped:
+<span class="nc" id="L200">                        testCapabilitySkippedCount++;</span>
+<span class="nc" id="L201">                        break;</span>
+                    default:
+<span class="nc" id="L203">                        testCapabilityUnknownCount++;</span>
+                        break;
+                }
+<span class="nc" id="L206">            }</span>
+<span class="nc" id="L207">            testResult.setSuccessCount(testCapabilitySuccessCount);</span>
+<span class="nc" id="L208">            testResult.setFailureCount(testCapabilityFailCount);</span>
+<span class="nc" id="L209">            testResult.setSkippedCount(testCapabilitySkippedCount);</span>
+<span class="nc" id="L210">            testResult.setUnknownStatusCount(testCapabilityUnknownCount);</span>
+<span class="nc" id="L211">            return testResult;</span>
+        }
+<span class="nc" id="L213">        return null;</span>
+    }
+
+    // Helper Methods
+
+    private String getString(JSONObject json, String key) {
+<span class="nc" id="L219">        return (String) json.get(key);</span>
+    }
+
+    private long getLong(JSONObject json, String key) {
+<span class="nc" id="L223">        Object value = json.get(key);</span>
+<span class="nc bnc" id="L224" title="All 2 branches missed.">        return value == null ? 0 : (Long) value;</span>
+    }
+
+    private JSONArray getJsonArray(JSONObject json, String key) {
+<span class="nc" id="L228">        Object array = json.get(key);</span>
+<span class="nc bnc" id="L229" title="All 2 branches missed.">        return array == null ? new JSONArray() : (JSONArray) array;</span>
+    }
+
+    public TestDataCreateRequest getTestDataCreateRequest() {
+
+<span class="nc bnc" id="L234" title="All 2 branches missed.">        if (testResult != null) {</span>
+<span class="nc" id="L235">            TestDataCreateRequest request = new TestDataCreateRequest();</span>
+<span class="nc" id="L236">            EnvVars env = null;</span>
+            try {
+<span class="nc" id="L238">                env = run.getEnvironment(listener);</span>
+<span class="nc" id="L239">            } catch (IOException | InterruptedException e) {</span>
+<span class="nc" id="L240">                logger.warning(&quot;Error getting environment variables&quot;);</span>
+<span class="nc" id="L241">            }</span>
+<span class="nc bnc" id="L242" title="All 2 branches missed.">            if (env != null) {</span>
+<span class="nc" id="L243">                request.setServerUrl(env.get(&quot;JENKINS_URL&quot;));</span>
+            } else {
+<span class="nc" id="L245">                String jobPath = &quot;/job&quot; + &quot;/&quot; + buildDataCreateRequest.getJobName() + &quot;/&quot;;</span>
+<span class="nc" id="L246">                int ind = buildDataCreateRequest.getJobUrl().indexOf(jobPath);</span>
+<span class="nc" id="L247">                request.setServerUrl(buildDataCreateRequest.getJobUrl().substring(0, ind));</span>
+            }
+<span class="nc" id="L249">            request.setTestJobId(buildId);</span>
+<span class="nc" id="L250">            request.setType(testResult.getType());</span>
+<span class="nc" id="L251">            request.setTestJobName(buildDataCreateRequest.getJobName());</span>
+<span class="nc" id="L252">            request.setTestJobUrl(buildDataCreateRequest.getJobUrl());</span>
+<span class="nc" id="L253">            request.setTimestamp(testResult.getTimestamp());</span>
+<span class="nc" id="L254">            request.setNiceName(jenkinsName);</span>
+
+<span class="nc" id="L256">            request.setDescription(testResult.getDescription());</span>
+<span class="nc" id="L257">            request.setDuration(testResult.getDuration());</span>
+<span class="nc" id="L258">            request.setEndTime(testResult.getEndTime());</span>
+<span class="nc" id="L259">            request.setExecutionId(testResult.getExecutionId());</span>
+<span class="nc" id="L260">            request.setFailureCount(testResult.getFailureCount());</span>
+<span class="nc" id="L261">            request.setSkippedCount(testResult.getSkippedCount());</span>
+<span class="nc" id="L262">            request.setStartTime(testResult.getStartTime());</span>
+<span class="nc" id="L263">            request.setSuccessCount(testResult.getSuccessCount());</span>
+
+<span class="nc" id="L265">            request.setTotalCount(testResult.getTotalCount());</span>
+<span class="nc" id="L266">            request.setUnknownStatusCount(testResult.getUnknownStatusCount());</span>
+<span class="nc" id="L267">            request.getTestCapabilities().addAll(testResult.getTestCapabilities());</span>
+
+<span class="nc" id="L269">            request.setTargetAppName(applicationName);</span>
+<span class="nc" id="L270">            request.setTargetEnvName(environmentName);</span>
+<span class="nc" id="L271">            return request;</span>
+        }
+<span class="nc" id="L273">        return null;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.0.201801022044</span></div></body></html>

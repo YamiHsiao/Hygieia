@@ -1,0 +1,11 @@
+C:\Users\Yami\Downloads\Hygieia-master\Hygieia-master\collectors\artifact\artifactory\src\main\java\com\capitalone\dashboard\repository\ArtifactoryRepoRepository.java
+C:\Users\Yami\Downloads\Hygieia-master\Hygieia-master\collectors\artifact\artifactory\src\main\java\com\capitalone\dashboard\util\ArtifactUtil.java
+C:\Users\Yami\Downloads\Hygieia-master\Hygieia-master\collectors\artifact\artifactory\src\main\java\com\capitalone\dashboard\Application.java
+C:\Users\Yami\Downloads\Hygieia-master\Hygieia-master\collectors\artifact\artifactory\src\main\java\com\capitalone\dashboard\collector\RestOperationsSupplier.java
+C:\Users\Yami\Downloads\Hygieia-master\Hygieia-master\collectors\artifact\artifactory\src\main\java\com\capitalone\dashboard\collector\ArtifactoryCollectorTask.java
+C:\Users\Yami\Downloads\Hygieia-master\Hygieia-master\collectors\artifact\artifactory\src\main\java\com\capitalone\dashboard\model\ArtifactoryCollector.java
+C:\Users\Yami\Downloads\Hygieia-master\Hygieia-master\collectors\artifact\artifactory\src\main\java\com\capitalone\dashboard\model\ArtifactoryRepo.java
+C:\Users\Yami\Downloads\Hygieia-master\Hygieia-master\collectors\artifact\artifactory\src\main\java\com\capitalone\dashboard\collector\ArtifactoryClient.java
+C:\Users\Yami\Downloads\Hygieia-master\Hygieia-master\collectors\artifact\artifactory\src\main\java\com\capitalone\dashboard\collector\ArtifactorySettings.java
+C:\Users\Yami\Downloads\Hygieia-master\Hygieia-master\collectors\artifact\artifactory\src\main\java\com\capitalone\dashboard\repository\ArtifactoryCollectorRepository.java
+C:\Users\Yami\Downloads\Hygieia-master\Hygieia-master\collectors\artifact\artifactory\src\main\java\com\capitalone\dashboard\collector\DefaultArtifactoryClient.java

@@ -1,0 +1,10 @@
+com\capitalone\dashboard\collector\DefaultHpsmClient$SoapRequestType.class
+com\capitalone\dashboard\collector\HpsmSettings.class
+com\capitalone\dashboard\model\HpsmCollector.class
+com\capitalone\dashboard\collector\RestOperationsSupplier.class
+com\capitalone\dashboard\collector\HpsmClient.class
+com\capitalone\dashboard\model\HpsmSoapModel.class
+com\capitalone\dashboard\Application.class
+com\capitalone\dashboard\collector\HpsmCollectorTask.class
+com\capitalone\dashboard\collector\DefaultHpsmClient.class
+com\capitalone\dashboard\repository\HpsmRepository.class

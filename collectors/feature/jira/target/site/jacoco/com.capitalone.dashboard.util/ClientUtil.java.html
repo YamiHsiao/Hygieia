@@ -1,0 +1,396 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="zh"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ClientUtil.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">com.capitalone.dashboard:jira-feature-collector</a> &gt; <a href="index.source.html" class="el_package">com.capitalone.dashboard.util</a> &gt; <span class="el_source">ClientUtil.java</span></div><h1>ClientUtil.java</h1><pre class="source lang-java linenums">/*************************DA-BOARD-LICENSE-START*********************************
+ * Copyright 2014 CapitalOne, LLC.
+ *
+ * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *************************DA-BOARD-LICENSE-END*********************************/
+
+package com.capitalone.dashboard.util;
+
+import org.codehaus.jettison.json.JSONException;
+import org.joda.time.DateTime;
+import org.joda.time.format.ISODateTimeFormat;
+import org.json.simple.JSONArray;
+import org.json.simple.JSONObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.capitalone.dashboard.client.Sprint;
+
+import java.nio.ByteBuffer;
+import java.nio.charset.CharsetDecoder;
+import java.nio.charset.StandardCharsets;
+import java.text.ParseException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+/**
+ * This class houses any globally-used utility methods re-used by aspects of
+ * clients in this collector
+ * 
+ * @author KFK884
+ * 
+ */
+public final class ClientUtil {
+<span class="fc" id="L49">	private static final Logger LOGGER = LoggerFactory.getLogger(ClientUtil.class);</span>
+	
+<span class="fc" id="L51">	private static final ClientUtil INSTANCE = new ClientUtil();</span>
+	
+	// not static because not thread safe
+	private static final String SPRINT_SPLIT = &quot;(?=,\\w+=)&quot;;
+
+	/**
+	 * Default constructor
+	 */
+<span class="fc" id="L59">	private ClientUtil() {</span>
+
+<span class="fc" id="L61">	}</span>
+
+	/**
+	 * Utility method used to sanitize / canonicalize a String-based response
+	 * artifact from a source system. This will return a valid UTF-8 strings, or
+	 * a &quot;&quot; (blank) response for any of the following cases:
+	 * &quot;NULL&quot;;&quot;Null&quot;;&quot;null&quot;;null;&quot;&quot;
+	 * 
+	 * @param inNativeRs
+	 *            The string response artifact retrieved from the source system
+	 *            to be sanitized
+	 * @return A UTF-8 sanitized response
+	 */
+	public String sanitizeResponse(Object inNativeRs) {
+<span class="fc bfc" id="L75" title="All 2 branches covered.">		if (inNativeRs == null) {</span>
+<span class="fc" id="L76">			return &quot;&quot;;</span>
+		}
+<span class="fc" id="L78">		String nativeRs = inNativeRs.toString();</span>
+
+		byte[] utf8Bytes;
+<span class="fc" id="L81">		CharsetDecoder cs = StandardCharsets.UTF_8.newDecoder();</span>
+		try {
+<span class="fc bfc" id="L83" title="All 2 branches covered.">			if (&quot;null&quot;.equalsIgnoreCase(nativeRs)) {</span>
+<span class="fc" id="L84">				return &quot;&quot;;</span>
+			}
+<span class="fc bfc" id="L86" title="All 2 branches covered.">			if (nativeRs.isEmpty()) {</span>
+<span class="fc" id="L87">				return &quot;&quot;;</span>
+			}
+<span class="fc" id="L89">			utf8Bytes = nativeRs.getBytes(StandardCharsets.UTF_8);</span>
+<span class="fc" id="L90">			cs.decode(ByteBuffer.wrap(utf8Bytes));</span>
+<span class="fc" id="L91">			return new String(utf8Bytes, StandardCharsets.UTF_8);</span>
+<span class="nc" id="L92">		} catch (Exception e) {</span>
+<span class="nc" id="L93">			return &quot;[INVALID NON UTF-8 ENCODING]&quot;;</span>
+		}
+	}
+
+	/**
+	 * Canonicalizes date format returned from source system. Some source
+	 * systems have incorrectly formatted dates, or date times stamps that are
+	 * not database friendly.
+	 * 
+	 * @param nativeRs
+	 *            Native date format as a string
+	 * @return A stringified canonical date format
+	 */
+	public String toCanonicalDate(String nativeRs) {
+<span class="fc bfc" id="L107" title="All 4 branches covered.">		if (nativeRs != null &amp;&amp; !nativeRs.isEmpty()) {</span>
+			try {
+<span class="fc" id="L109">				DateTime dt = ISODateTimeFormat.dateOptionalTimeParser().parseDateTime(nativeRs);</span>
+				// add 0's at end for backwards compatability
+<span class="fc" id="L111">				return ISODateTimeFormat.dateHourMinuteSecondMillis().print(dt) + &quot;0000&quot;;</span>
+<span class="nc" id="L112">			} catch (IllegalArgumentException e) {</span>
+<span class="nc" id="L113">				LOGGER.error(&quot;Failed to parse date: &quot; + nativeRs);</span>
+<span class="nc" id="L114">				LOGGER.debug(&quot;Exception&quot;, e);</span>
+			}
+		}
+		
+<span class="fc" id="L118">		return &quot;&quot;;</span>
+	}
+
+	/**
+	 * Canonicalizes a given JSONArray to a basic List object to avoid the use
+	 * of JSON parsers.
+	 * 
+	 * @param list
+	 *            A given JSONArray object response from the source system
+	 * @return The sanitized, canonical List&lt;String&gt;
+	 */
+	public List&lt;String&gt; toCanonicalList(List&lt;String&gt; list) {
+<span class="fc" id="L130">		List&lt;String&gt; canonicalRs = new ArrayList&lt;&gt;();</span>
+
+<span class="fc bfc" id="L132" title="All 4 branches covered.">		if ((list != null) &amp;&amp; !(list.isEmpty())) {</span>
+<span class="fc" id="L133">			Iterator&lt;String&gt; iterator = list.iterator();</span>
+<span class="fc bfc" id="L134" title="All 2 branches covered.">			while (iterator.hasNext()) {</span>
+<span class="fc" id="L135">				canonicalRs.add(this.sanitizeResponse(iterator.next()));</span>
+			}
+		}
+
+<span class="fc" id="L139">		return canonicalRs;</span>
+	}
+
+	/**
+	 * Converts a given ISO formatted date string representation used by the
+	 * local MongoDB instance into a string date representation used by the
+	 * source system. This can be used to convert dates found in MongoDB into
+	 * source system syntax for querying the source system based on local data
+	 * 
+	 * @param canonicalDate
+	 *            A string representation of an ISO format used by the local
+	 *            MongoDB instance
+	 * @return A nativized date string that can be consumed by a source system
+	 */
+	public String toNativeDate(String canonicalDate) {
+<span class="fc" id="L154">		String nativeDate = &quot;&quot;;</span>
+
+<span class="pc bpc" id="L156" title="1 of 4 branches missed.">		if ((canonicalDate != null) &amp;&amp; !(canonicalDate.isEmpty())) {</span>
+<span class="fc" id="L157">			nativeDate = canonicalDate.replace(&quot;T&quot;, &quot; &quot;);</span>
+			try {
+<span class="fc" id="L159">				nativeDate = nativeDate.substring(0, 16);</span>
+<span class="fc" id="L160">			} catch (StringIndexOutOfBoundsException e) {</span>
+<span class="fc" id="L161">				nativeDate = nativeDate.concat(&quot; 00:00&quot;);</span>
+<span class="fc" id="L162">			}</span>
+		} else {
+<span class="fc" id="L164">			nativeDate = &quot;1900-01-01 00:00&quot;;</span>
+		}
+
+<span class="fc" id="L167">		return nativeDate;</span>
+	}
+
+	/**
+	 * Converts a Jira string representation of sprint artifacts into a
+	 * canonical JSONArray format.
+	 * 
+	 * @param nativeRs
+	 *            a sanitized String representation of a sprint artifact link
+	 *            from Jira
+	 * @return A canonical JSONArray of Jira sprint artifacts
+	 */
+	@SuppressWarnings(&quot;unchecked&quot;)
+	public JSONObject toCanonicalSprintJSON(String nativeRs) {
+<span class="fc" id="L181">		JSONObject canonicalRs = new JSONObject();</span>
+		CharSequence interrimChar;
+<span class="fc" id="L183">		int start = 0;</span>
+<span class="fc" id="L184">		int end = 0;</span>
+
+<span class="pc bpc" id="L186" title="1 of 4 branches missed.">		if ((nativeRs != null) &amp;&amp; !(nativeRs.isEmpty())) {</span>
+<span class="fc" id="L187">			start = nativeRs.indexOf('[') + 1;</span>
+<span class="fc" id="L188">			end = nativeRs.length() - 1;</span>
+<span class="fc" id="L189">			StringBuffer interrimBuf = new StringBuffer(nativeRs);</span>
+<span class="fc" id="L190">			interrimChar = interrimBuf.subSequence(start, end);</span>
+<span class="fc" id="L191">			String interrimStr = interrimChar.toString();</span>
+
+<span class="fc" id="L193">			List&lt;String&gt; list = Arrays.asList(interrimStr.split(&quot;,&quot;));</span>
+<span class="pc bpc" id="L194" title="2 of 4 branches missed.">			if ((list != null) &amp;&amp; !(list.isEmpty())) {</span>
+<span class="fc" id="L195">				Iterator&lt;String&gt; listIt = list.iterator();</span>
+<span class="fc bfc" id="L196" title="All 2 branches covered.">				while (listIt.hasNext()) {</span>
+<span class="fc" id="L197">					String temp = listIt.next();</span>
+<span class="fc" id="L198">					String[] keyValuePair = temp.split(&quot;=&quot;, 2);</span>
+<span class="fc" id="L199">					String key = keyValuePair[0];</span>
+<span class="fc" id="L200">					String value = &quot;&quot;;</span>
+					
+<span class="pc bpc" id="L202" title="1 of 2 branches missed.">					if (keyValuePair.length &gt; 1) {</span>
+<span class="fc" id="L203">						value = keyValuePair[1];</span>
+					}
+					
+<span class="fc bfc" id="L206" title="All 2 branches covered.">					if (&quot;&lt;null&gt;&quot;.equalsIgnoreCase(value)) {</span>
+<span class="fc" id="L207">						value = &quot;&quot;;</span>
+					}
+<span class="fc" id="L209">					canonicalRs.put(key, value);</span>
+<span class="fc" id="L210">				}</span>
+			}
+<span class="fc" id="L212">		} else {</span>
+<span class="fc" id="L213">			canonicalRs.clear();</span>
+		}
+
+<span class="fc" id="L216">		return canonicalRs;</span>
+	}
+
+	/**
+	 * Converts a Jira string representation of sprint artifacts into a POJO Map
+	 * object, with string as keys.
+	 * 
+	 * @param nativeRs
+	 *            a sanitized String representation of a sprint artifact link
+	 *            from Jira
+	 * @return A canonical Map of Jira sprint artifacts
+	 */
+	public Map&lt;String, Object&gt; toCanonicalSprintPOJO(String nativeRs) {
+<span class="nc" id="L229">		JSONObject nativeSprint = this.toCanonicalSprintJSON(nativeRs.substring(1,</span>
+<span class="nc" id="L230">				nativeRs.length() - 2));</span>
+<span class="nc" id="L231">		Map&lt;String, Object&gt; canonicalSprint = new HashMap&lt;String, Object&gt;();</span>
+
+<span class="nc bnc" id="L233" title="All 4 branches missed.">		if ((nativeSprint != null) &amp;&amp; !(nativeSprint.isEmpty())) {</span>
+			@SuppressWarnings(&quot;unchecked&quot;)
+<span class="nc" id="L235">			Set&lt;String&gt; keys = nativeSprint.keySet();</span>
+<span class="nc" id="L236">			Iterator&lt;String&gt; keysItr = keys.iterator();</span>
+<span class="nc bnc" id="L237" title="All 2 branches missed.">			while (keysItr.hasNext()) {</span>
+<span class="nc" id="L238">				String key = keysItr.next();</span>
+<span class="nc" id="L239">				Object value = nativeSprint.get(key);</span>
+
+<span class="nc bnc" id="L241" title="All 2 branches missed.">				if (value instanceof JSONArray) {</span>
+					try {
+<span class="nc" id="L243">						value = this.toList((JSONArray) value);</span>
+<span class="nc" id="L244">					} catch (JSONException e) {</span>
+<span class="nc" id="L245">						value = new ArrayList&lt;String&gt;();</span>
+<span class="nc" id="L246">					}</span>
+<span class="nc bnc" id="L247" title="All 2 branches missed.">				} else if (value instanceof JSONObject) {</span>
+<span class="nc" id="L248">					value = this.toCanonicalSprintPOJO(value.toString());</span>
+				}
+<span class="nc" id="L250">				canonicalSprint.put(key, value);</span>
+<span class="nc" id="L251">			}</span>
+		}
+
+<span class="nc" id="L254">		return canonicalSprint;</span>
+	}
+	
+	/**
+	 * Parse a json array of raw sprint tostrings to Sprint objects
+	 * 
+	 * @param data
+	 * @return a list of Sprints that were parsed if possible.
+	 * @throws ParseException if a sprint could not be parsed
+	 */
+	public List&lt;Sprint&gt; parseSprints(Object data) throws ParseException {
+<span class="fc" id="L265">		List&lt;Sprint&gt; sprints = new ArrayList&lt;&gt;();</span>
+		
+<span class="pc bpc" id="L267" title="1 of 2 branches missed.">		if (data instanceof JSONArray) {</span>
+<span class="nc bnc" id="L268" title="All 2 branches missed.">			for (Object obj : (JSONArray)data) {</span>
+<span class="nc bnc" id="L269" title="All 2 branches missed.">				String rawToString = obj != null? obj.toString() : null;</span>
+				
+<span class="nc" id="L271">				Sprint sprint = parseSprint(rawToString);</span>
+				
+<span class="nc" id="L273">				sprints.add(sprint);</span>
+<span class="nc" id="L274">			}</span>
+<span class="pc bpc" id="L275" title="1 of 2 branches missed.">		} else if (data instanceof org.codehaus.jettison.json.JSONArray) {</span>
+<span class="fc" id="L276">			org.codehaus.jettison.json.JSONArray jsonA = (org.codehaus.jettison.json.JSONArray)data;</span>
+<span class="fc bfc" id="L277" title="All 2 branches covered.">			for (int i = 0; i &lt; jsonA.length(); ++i) {</span>
+				Object obj;
+				try {
+<span class="fc" id="L280">					obj = jsonA.get(i);</span>
+<span class="nc" id="L281">				} catch (JSONException e) {</span>
+<span class="nc" id="L282">					throw new RuntimeException(&quot;&quot;, e);</span>
+<span class="fc" id="L283">				}</span>
+				
+<span class="pc bpc" id="L285" title="1 of 2 branches missed.">				String rawToString = obj != null? obj.toString() : null;</span>
+				
+<span class="fc" id="L287">				Sprint sprint = parseSprint(rawToString);</span>
+				
+<span class="fc" id="L289">				sprints.add(sprint);</span>
+			}
+		}
+		
+<span class="fc" id="L293">		return sprints;</span>
+	}
+	
+	@SuppressWarnings({ &quot;PMD.NPathComplexity&quot; })
+	public Sprint parseSprint(String rawSprintToString) throws ParseException {
+<span class="fc" id="L298">		Sprint sprint = new Sprint();</span>
+		
+<span class="pc bpc" id="L300" title="2 of 4 branches missed.">		if (rawSprintToString != null &amp;&amp; rawSprintToString.matches(&quot;.*\\[.+\\][^\\]]*&quot;)) {</span>
+<span class="fc" id="L301">			String rawToString = rawSprintToString.substring(rawSprintToString.indexOf('[') + 1, rawSprintToString.length() - 1);</span>
+<span class="fc" id="L302">			String[] kvRaws = rawToString.split(SPRINT_SPLIT);</span>
+			
+<span class="fc bfc" id="L304" title="All 2 branches covered.">			for (String kvRaw : kvRaws) {</span>
+<span class="fc" id="L305">				int eqIdx = kvRaw.indexOf('=');</span>
+				
+				// just in case logic changes above
+<span class="pc bpc" id="L308" title="1 of 2 branches missed.">				if (eqIdx &gt; 0) {</span>
+<span class="fc bfc" id="L309" title="All 2 branches covered.">					String key = kvRaw.charAt(0) == ','? kvRaw.substring(1, eqIdx) : kvRaw.substring(0, eqIdx);</span>
+<span class="pc bpc" id="L310" title="1 of 2 branches missed.">					String valueAsStr = eqIdx == kvRaw.length() - 1? &quot;&quot; : kvRaw.substring(eqIdx + 1, kvRaw.length());</span>
+					
+<span class="pc bpc" id="L312" title="1 of 2 branches missed.">					if (&quot;&lt;null&gt;&quot;.equalsIgnoreCase(valueAsStr)) {</span>
+<span class="nc" id="L313">						valueAsStr = &quot;&quot;;</span>
+					}
+
+<span class="fc bfc" id="L316" title="All 2 branches covered.">					if (&quot;id&quot;.equals(key)) {</span>
+<span class="fc" id="L317">						sprint.setId(Long.valueOf(valueAsStr));</span>
+<span class="fc bfc" id="L318" title="All 2 branches covered.">					} else if (&quot;rapidViewId&quot;.equals(key)) {</span>
+					    try {
+<span class="fc" id="L320">					        sprint.setRapidViewId(Long.valueOf(valueAsStr));</span>
+<span class="nc" id="L321">					    } catch (NumberFormatException e) {</span>
+<span class="nc" id="L322">					        LOGGER.error(&quot;rapidViewId found is not a number: &quot; + valueAsStr + &quot;, sprint: &quot; + rawSprintToString);</span>
+<span class="pc" id="L323">					    }</span>
+<span class="fc bfc" id="L324" title="All 2 branches covered.">                    } else if (&quot;state&quot;.equals(key)) {</span>
+<span class="fc" id="L325">						sprint.setState(valueAsStr);</span>
+<span class="fc bfc" id="L326" title="All 2 branches covered.">					} else if (&quot;name&quot;.equals(key)) {</span>
+<span class="fc" id="L327">						sprint.setName(valueAsStr);</span>
+<span class="fc bfc" id="L328" title="All 2 branches covered.">					} else if (&quot;startDate&quot;.equals(key)) {</span>
+<span class="fc" id="L329">						sprint.setStartDateStr(valueAsStr);</span>
+<span class="fc bfc" id="L330" title="All 2 branches covered.">					} else if (&quot;endDate&quot;.equals(key)) {</span>
+<span class="fc" id="L331">						sprint.setEndDateStr(valueAsStr);</span>
+<span class="fc bfc" id="L332" title="All 2 branches covered.">					} else if (&quot;completeDate&quot;.equals(key)) {</span>
+<span class="fc" id="L333">						sprint.setCompleteDateStr(valueAsStr);</span>
+<span class="pc bpc" id="L334" title="1 of 2 branches missed.">					} else if (&quot;sequence&quot;.equals(key)) {</span>
+<span class="fc" id="L335">						sprint.setSequence(Integer.valueOf(valueAsStr));</span>
+					}
+				}
+			}
+<span class="fc" id="L339">		} else {</span>
+<span class="nc" id="L340">			throw new ParseException(&quot;Unparsable sprint: &quot; + rawSprintToString, 0);</span>
+		}
+		
+<span class="fc" id="L343">		return sprint;</span>
+	}
+
+	/**
+	 * Converts JSONArray to list artifact
+	 * 
+	 * @param array
+	 *            JSONArray artifact
+	 * @return A List artifact representing JSONArray information
+	 * @throws JSONException
+	 */
+	private List&lt;Object&gt; toList(JSONArray array) throws JSONException {
+<span class="nc" id="L355">		List&lt;Object&gt; list = new ArrayList&lt;Object&gt;();</span>
+<span class="nc bnc" id="L356" title="All 2 branches missed.">		for (int i = 0; i &lt; array.size(); i++) {</span>
+<span class="nc" id="L357">			Object value = array.get(i);</span>
+<span class="nc bnc" id="L358" title="All 2 branches missed.">			if (value instanceof JSONArray) {</span>
+<span class="nc" id="L359">				value = toList((JSONArray) value);</span>
+			}
+
+<span class="nc bnc" id="L362" title="All 2 branches missed.">			else if (value instanceof JSONObject) {</span>
+<span class="nc" id="L363">				value = this.toCanonicalSprintPOJO(value.toString());</span>
+			}
+<span class="nc" id="L365">			list.add(value);</span>
+		}
+<span class="nc" id="L367">		return list;</span>
+	}
+
+	/**
+	 * Jira story estimate in minutes, converted to hours, rounded down: For
+	 * Jira, 8 hours = 1 day; 5 days = 1 week
+	 * 
+	 * @param estimate
+	 *            Minute representation of estimate content
+	 * @return Hour representation of minutes, rounded down
+	 */
+	public String toHours(String estimate) {
+<span class="fc" id="L379">		String nullLiteral = &quot;null&quot;;</span>
+<span class="fc" id="L380">		String hours = &quot;&quot;;</span>
+<span class="fc" id="L381">		long minutes = 0;</span>
+<span class="pc bpc" id="L382" title="1 of 6 branches missed.">		if ((estimate != null) &amp;&amp; !estimate.isEmpty() &amp;&amp; !nullLiteral.equalsIgnoreCase(estimate)) {</span>
+<span class="fc" id="L383">			minutes = Long.valueOf(estimate);</span>
+<span class="fc" id="L384">			hours = this.sanitizeResponse(Integer.toString((int) (minutes / 60)));</span>
+		} else {
+<span class="fc" id="L386">			hours = &quot;0&quot;;</span>
+		}
+
+<span class="fc" id="L389">		return hours;</span>
+	}
+	
+	public static ClientUtil getInstance() {
+<span class="fc" id="L393">		return INSTANCE;</span>
+	}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.6.201602180812</span></div></body></html>

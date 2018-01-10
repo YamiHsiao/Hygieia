@@ -1,0 +1,229 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="zh"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>HygieiaDeployPublishStep.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Hygieia Publisher Plugin</a> &gt; <a href="index.source.html" class="el_package">jenkins.plugins.hygieia.workflow</a> &gt; <span class="el_source">HygieiaDeployPublishStep.java</span></div><h1>HygieiaDeployPublishStep.java</h1><pre class="source lang-java linenums">package jenkins.plugins.hygieia.workflow;
+
+import com.capitalone.dashboard.model.BuildStatus;
+import com.capitalone.dashboard.request.DeployDataCreateRequest;
+import hudson.Extension;
+import hudson.FilePath;
+import hudson.model.Run;
+import hudson.model.TaskListener;
+import hudson.util.FormValidation;
+import hudson.util.ListBoxModel;
+import hygieia.builder.BuildBuilder;
+import hygieia.builder.DeployBuilder;
+import jenkins.model.Jenkins;
+import jenkins.plugins.hygieia.DefaultHygieiaService;
+import jenkins.plugins.hygieia.HygieiaPublisher;
+import jenkins.plugins.hygieia.HygieiaResponse;
+import jenkins.plugins.hygieia.HygieiaService;
+import org.apache.commons.httpclient.HttpStatus;
+import org.jenkinsci.plugins.workflow.steps.AbstractStepDescriptorImpl;
+import org.jenkinsci.plugins.workflow.steps.AbstractStepImpl;
+import org.jenkinsci.plugins.workflow.steps.AbstractSynchronousNonBlockingStepExecution;
+import org.jenkinsci.plugins.workflow.steps.StepContextParameter;
+import org.kohsuke.stapler.DataBoundConstructor;
+import org.kohsuke.stapler.DataBoundSetter;
+import org.kohsuke.stapler.QueryParameter;
+
+import javax.inject.Inject;
+import javax.servlet.ServletException;
+import java.io.IOException;
+import java.util.Set;
+
+
+public class HygieiaDeployPublishStep extends AbstractStepImpl {
+
+
+    private  String artifactName;
+    private  String artifactDirectory;
+    private  String artifactGroup;
+    private  String artifactVersion;
+    private  String applicationName;
+    private  String environmentName;
+
+    private String buildStatus;
+
+    public String getBuildStatus() {
+<span class="nc" id="L46">        return buildStatus;</span>
+    }
+
+    @DataBoundSetter
+    public void setBuildStatus(String buildStatus) {
+<span class="nc" id="L51">        this.buildStatus = buildStatus;</span>
+<span class="nc" id="L52">    }</span>
+
+    public String getArtifactName() {
+<span class="nc" id="L55">        return artifactName;</span>
+    }
+
+    @DataBoundSetter
+    public void setArtifactName(String artifactName) {
+<span class="nc" id="L60">        this.artifactName = artifactName;</span>
+<span class="nc" id="L61">    }</span>
+
+    public String getArtifactDirectory() {
+<span class="nc" id="L64">        return artifactDirectory;</span>
+    }
+
+    @DataBoundSetter
+    public void setArtifactDirectory(String artifactDirectory) {
+<span class="nc" id="L69">        this.artifactDirectory = artifactDirectory;</span>
+<span class="nc" id="L70">    }</span>
+
+    public String getArtifactGroup() {
+<span class="nc" id="L73">        return artifactGroup;</span>
+    }
+
+    @DataBoundSetter
+    public void setArtifactGroup(String artifactGroup) {
+<span class="nc" id="L78">        this.artifactGroup = artifactGroup;</span>
+<span class="nc" id="L79">    }</span>
+
+    public String getArtifactVersion() {
+<span class="nc" id="L82">        return artifactVersion;</span>
+    }
+
+    @DataBoundSetter
+    public void setArtifactVersion(String artifactVersion) {
+<span class="nc" id="L87">        this.artifactVersion = artifactVersion;</span>
+<span class="nc" id="L88">    }</span>
+
+    public String getApplicationName() {
+<span class="nc" id="L91">        return applicationName;</span>
+    }
+
+    @DataBoundSetter
+    public void setApplicationName(String applicationName) {
+<span class="nc" id="L96">        this.applicationName = applicationName;</span>
+<span class="nc" id="L97">    }</span>
+
+    public String getEnvironmentName() {
+<span class="nc" id="L100">        return environmentName;</span>
+    }
+
+    @DataBoundSetter
+    public void setEnvironmentName(String environmentName) {
+<span class="nc" id="L105">        this.environmentName = environmentName;</span>
+<span class="nc" id="L106">    }</span>
+
+    @DataBoundConstructor
+<span class="nc" id="L109">    public HygieiaDeployPublishStep(String artifactName, String artifactDirectory, String artifactGroup, String artifactVersion, String applicationName, String environmentName, String buildStatus) {</span>
+<span class="nc" id="L110">        this.artifactName = artifactName;</span>
+<span class="nc" id="L111">        this.artifactDirectory = artifactDirectory;</span>
+<span class="nc" id="L112">        this.artifactGroup = artifactGroup;</span>
+<span class="nc" id="L113">        this.artifactVersion = artifactVersion;</span>
+<span class="nc" id="L114">        this.applicationName = applicationName;</span>
+<span class="nc" id="L115">        this.environmentName = environmentName;</span>
+<span class="nc" id="L116">        this.buildStatus = buildStatus;</span>
+<span class="nc" id="L117">    }</span>
+
+
+    public boolean checkFileds() {
+<span class="nc bnc" id="L121" title="All 2 branches missed.">        return (!&quot;&quot;.equals(artifactName));</span>
+    }
+
+    @Extension
+    public static class DescriptorImpl extends AbstractStepDescriptorImpl {
+
+        public DescriptorImpl() {
+<span class="nc" id="L128">            super(HygieiaDeployPublishStepExecution.class);</span>
+<span class="nc" id="L129">        }</span>
+
+        @Override
+        public String getFunctionName() {
+<span class="nc" id="L133">            return &quot;hygieiaDeployPublishStep&quot;;</span>
+        }
+
+        @Override
+        public String getDisplayName() {
+<span class="nc" id="L138">            return &quot;Hygieia Deployment Publish Step&quot;;</span>
+        }
+
+        public FormValidation doCheckValue(@QueryParameter String value) throws IOException, ServletException {
+<span class="nc bnc" id="L142" title="All 2 branches missed.">            if (value.isEmpty()) {</span>
+<span class="nc" id="L143">                return FormValidation.warning(&quot;You must fill this box!&quot;);</span>
+            }
+<span class="nc" id="L145">            return FormValidation.ok();</span>
+        }
+
+
+        public ListBoxModel doFillBuildStatusItems() {
+<span class="nc" id="L150">            ListBoxModel model = new ListBoxModel();</span>
+<span class="nc" id="L151">            model.add(&quot;Started&quot;, &quot;InProgress&quot;);</span>
+<span class="nc" id="L152">            model.add(&quot;Success&quot;, BuildStatus.Success.toString());</span>
+<span class="nc" id="L153">            model.add(&quot;Failure&quot;, BuildStatus.Failure.toString());</span>
+<span class="nc" id="L154">            model.add(&quot;Unstable&quot;, BuildStatus.Unstable.toString());</span>
+<span class="nc" id="L155">            model.add(&quot;Aborted&quot;, BuildStatus.Aborted.toString());</span>
+<span class="nc" id="L156">            return model;</span>
+        }
+
+    }
+
+<span class="nc" id="L161">    public static class HygieiaDeployPublishStepExecution extends AbstractSynchronousNonBlockingStepExecution&lt;Integer&gt; {</span>
+
+        private static final long serialVersionUID = 1L;
+
+        @Inject
+        transient HygieiaDeployPublishStep step;
+
+        @StepContextParameter
+        transient TaskListener listener;
+
+        @StepContextParameter
+        transient Run run;
+
+        @StepContextParameter
+        transient FilePath filepath;
+
+        // This run MUST return a non-Void object, otherwise it will be executed three times!!!! No idea why
+        @Override
+        protected Integer run() throws Exception {
+
+            //default to global config values if not set in step, but allow step to override all global settings
+
+            Jenkins jenkins;
+            try {
+<span class="nc" id="L185">                jenkins = Jenkins.getInstance();</span>
+<span class="nc" id="L186">            } catch (NullPointerException ne) {</span>
+<span class="nc" id="L187">                listener.error(ne.toString());</span>
+<span class="nc" id="L188">                return -1;</span>
+<span class="nc" id="L189">            }</span>
+
+<span class="nc" id="L191">            HygieiaPublisher.DescriptorImpl hygieiaDesc = jenkins.getDescriptorByType(HygieiaPublisher.DescriptorImpl.class);</span>
+<span class="nc" id="L192">            HygieiaService hygieiaService = getHygieiaService(hygieiaDesc.getHygieiaAPIUrl(), hygieiaDesc.getHygieiaToken(),</span>
+<span class="nc" id="L193">                    hygieiaDesc.getHygieiaJenkinsName(), hygieiaDesc.isUseProxy());</span>
+
+<span class="nc" id="L195">            BuildBuilder buildBuilder = new BuildBuilder(run, hygieiaDesc.getHygieiaJenkinsName(), listener, BuildStatus.Success, true);</span>
+<span class="nc" id="L196">            HygieiaResponse buildResponse = hygieiaService.publishBuildData(buildBuilder.getBuildData());</span>
+
+
+<span class="nc bnc" id="L199" title="All 2 branches missed.">            if (buildResponse.getResponseCode() == HttpStatus.SC_CREATED) {</span>
+<span class="nc" id="L200">                listener.getLogger().println(&quot;Hygieia: Published Build Data For Deployment Publishing. &quot; + buildResponse.toString());</span>
+            } else {
+<span class="nc" id="L202">                listener.getLogger().println(&quot;Hygieia: Failed Publishing Build Data for Deployment Publishing. &quot; + buildResponse.toString());</span>
+            }
+
+<span class="nc" id="L205">            DeployBuilder deployBuilder = new DeployBuilder(run, hygieiaDesc.getHygieiaJenkinsName(), step, filepath, listener, buildResponse.getResponseValue(), BuildStatus.fromString(step.buildStatus));</span>
+
+
+<span class="nc" id="L208">            Set&lt;DeployDataCreateRequest&gt; requests = deployBuilder.getDeploys();</span>
+<span class="nc bnc" id="L209" title="All 2 branches missed.">            for (DeployDataCreateRequest bac : requests) {</span>
+<span class="nc" id="L210">                HygieiaResponse deployResponse = hygieiaService.publishDeployData(bac);</span>
+<span class="nc bnc" id="L211" title="All 2 branches missed.">                if (deployResponse.getResponseCode() == HttpStatus.SC_CREATED) {</span>
+<span class="nc" id="L212">                    listener.getLogger().println(&quot;Hygieia: Published Deploy Data: &quot; + deployResponse.toString());</span>
+                } else {
+<span class="nc" id="L214">                    listener.getLogger().println(&quot;Hygieia: Failed Publishing Deploy Data:&quot; + deployResponse.toString());</span>
+                }
+<span class="nc" id="L216">            }</span>
+<span class="nc" id="L217">            return buildResponse.getResponseCode();</span>
+        }
+
+
+        //streamline unit testing
+        HygieiaService getHygieiaService(String hygieiaAPIUrl, String hygieiaToken, String hygieiaJenkinsName, boolean useProxy) {
+<span class="nc" id="L223">            return new DefaultHygieiaService(hygieiaAPIUrl, hygieiaToken, hygieiaJenkinsName, useProxy);</span>
+        }
+    }
+
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.0.201801022044</span></div></body></html>

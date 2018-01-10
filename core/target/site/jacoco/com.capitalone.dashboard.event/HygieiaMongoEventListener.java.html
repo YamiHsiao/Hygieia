@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="zh"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>HygieiaMongoEventListener.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">com.capitalone.dashboard:core</a> &gt; <a href="index.source.html" class="el_package">com.capitalone.dashboard.event</a> &gt; <span class="el_source">HygieiaMongoEventListener.java</span></div><h1>HygieiaMongoEventListener.java</h1><pre class="source lang-java linenums">package com.capitalone.dashboard.event;
+
+import com.capitalone.dashboard.model.*;
+import com.capitalone.dashboard.repository.CollectorItemRepository;
+import com.capitalone.dashboard.repository.CollectorRepository;
+import com.capitalone.dashboard.repository.PipelineRepository;
+import org.bson.types.ObjectId;
+import org.springframework.data.mongodb.core.mapping.event.AbstractMongoEventListener;
+
+import java.util.List;
+
+public abstract class HygieiaMongoEventListener&lt;T&gt; extends AbstractMongoEventListener&lt;T&gt; {
+
+    protected final CollectorItemRepository collectorItemRepository;
+    protected final PipelineRepository pipelineRepository;
+    protected final CollectorRepository collectorRepository;
+
+    public HygieiaMongoEventListener(CollectorItemRepository collectorItemRepository,
+                                     PipelineRepository pipelineRepository,
+<span class="fc" id="L20">                                     CollectorRepository collectorRepository) {</span>
+<span class="fc" id="L21">        this.collectorItemRepository = collectorItemRepository;</span>
+<span class="fc" id="L22">        this.pipelineRepository = pipelineRepository;</span>
+<span class="fc" id="L23">        this.collectorRepository = collectorRepository;</span>
+<span class="fc" id="L24">    }</span>
+
+    private Collector getProductCollector(){
+<span class="fc" id="L27">        List&lt;Collector&gt; productCollectors = collectorRepository.findByCollectorType(CollectorType.Product);</span>
+<span class="pc bpc" id="L28" title="1 of 2 branches missed.">        if(productCollectors.isEmpty()){</span>
+<span class="nc" id="L29">            return null;</span>
+        }
+<span class="fc" id="L31">        return productCollectors.get(0);</span>
+    }
+
+    /**
+     * Finds the team dashboard collectoritem by dashboard id and product collectorid
+     * @param teamDashboard
+     * @return
+     */
+    protected CollectorItem getTeamDashboardCollectorItem(Dashboard teamDashboard) {
+<span class="fc" id="L40">        ObjectId productCollectorId = getProductCollector().getId();</span>
+<span class="fc" id="L41">        ObjectId dashboardId = teamDashboard.getId();</span>
+<span class="fc" id="L42">        return collectorItemRepository.findTeamDashboardCollectorItemsByCollectorIdAndDashboardId(productCollectorId, dashboardId.toString());</span>
+    }
+
+    /**
+     * Finds or creates a pipeline for a dashboard
+     * @param teamDashboard
+     * @return
+     */
+    protected Pipeline getOrCreatePipeline(Dashboard teamDashboard) {
+<span class="fc" id="L51">        CollectorItem teamDashboardCollectorItem = getTeamDashboardCollectorItem(teamDashboard);</span>
+<span class="fc" id="L52">        return getOrCreatePipeline(teamDashboardCollectorItem);</span>
+    }
+
+    /**
+     * Finds or creates a pipeline for a dashboard collectoritem
+     * @param collectorItem
+     * @return
+     */
+    protected Pipeline getOrCreatePipeline(CollectorItem collectorItem) {
+<span class="fc" id="L61">        Pipeline pipeline = pipelineRepository.findByCollectorItemId(collectorItem.getId());</span>
+<span class="pc bpc" id="L62" title="1 of 2 branches missed.">        if(pipeline == null){</span>
+<span class="nc" id="L63">            pipeline = new Pipeline();</span>
+<span class="nc" id="L64">            pipeline.setCollectorItemId(collectorItem.getId());</span>
+        }
+<span class="fc" id="L66">        return pipeline;</span>
+    }
+
+    /**
+     * Finds or creates a new environment stage for a pipeline
+     * @param pipeline
+     * @param pseudoEnvironmentName
+     * @return
+     */
+    protected EnvironmentStage getOrCreateEnvironmentStage(Pipeline pipeline, String pseudoEnvironmentName){
+<span class="fc" id="L76">        EnvironmentStage stage = pipeline.getEnvironmentStageMap().get(pseudoEnvironmentName);</span>
+<span class="pc bpc" id="L77" title="1 of 2 branches missed.">        if(stage == null){</span>
+<span class="nc" id="L78">            stage = new EnvironmentStage();</span>
+<span class="nc" id="L79">            pipeline.getEnvironmentStageMap().put(pseudoEnvironmentName, stage);</span>
+        }
+<span class="fc" id="L81">        return stage;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.6.201602180812</span></div></body></html>

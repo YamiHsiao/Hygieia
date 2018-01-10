@@ -1,0 +1,198 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="zh"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>DefaultSonarClient.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">com.capitalone.dashboard:sonar-codequality-collector</a> &gt; <a href="index.source.html" class="el_package">com.capitalone.dashboard.collector</a> &gt; <span class="el_source">DefaultSonarClient.java</span></div><h1>DefaultSonarClient.java</h1><pre class="source lang-java linenums">package com.capitalone.dashboard.collector;
+
+import com.capitalone.dashboard.model.CodeQuality;
+import com.capitalone.dashboard.model.CodeQualityMetric;
+import com.capitalone.dashboard.model.CodeQualityMetricStatus;
+import com.capitalone.dashboard.model.CodeQualityType;
+import com.capitalone.dashboard.model.SonarProject;
+import com.capitalone.dashboard.util.SonarDashboardUrl;
+import com.capitalone.dashboard.util.Supplier;
+import org.apache.commons.codec.binary.Base64;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+import org.json.simple.JSONArray;
+import org.json.simple.JSONObject;
+import org.json.simple.parser.JSONParser;
+import org.json.simple.parser.ParseException;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.ResponseEntity;
+import org.springframework.stereotype.Component;
+import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestOperations;
+
+import java.math.BigDecimal;
+import java.nio.charset.Charset;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.List;
+
+@Component
+public class DefaultSonarClient implements SonarClient {
+<span class="fc" id="L35">    private static final Log LOG = LogFactory.getLog(DefaultSonarClient.class);</span>
+
+    private static final String URL_RESOURCES = &quot;/api/resources?format=json&quot;;
+    private static final String URL_RESOURCE_DETAILS = &quot;/api/resources?format=json&amp;resource=%s&amp;metrics=%s&amp;includealerts=true&quot;;
+
+    private static final String DATE_FORMAT = &quot;yyyy-MM-dd'T'HH:mm:ssZ&quot;;
+    private static final String ID = &quot;id&quot;;
+    private static final String NAME = &quot;name&quot;;
+    private static final String KEY = &quot;key&quot;;
+    private static final String VERSION = &quot;version&quot;;
+    private static final String MSR = &quot;msr&quot;;
+    private static final String ALERT = &quot;alert&quot;;
+    private static final String ALERT_TEXT = &quot;alert_text&quot;;
+    private static final String VALUE = &quot;val&quot;;
+    private static final String FORMATTED_VALUE = &quot;frmt_val&quot;;
+    private static final String STATUS_WARN = &quot;WARN&quot;;
+    private static final String STATUS_ALERT = &quot;ALERT&quot;;
+    private static final String DATE = &quot;date&quot;;
+
+    private final RestOperations rest;
+    private final HttpEntity&lt;String&gt; httpHeaders;
+
+    @Autowired
+<span class="nc" id="L58">    public DefaultSonarClient(Supplier&lt;RestOperations&gt; restOperationsSupplier, SonarSettings settings) {</span>
+<span class="nc" id="L59">        this.httpHeaders = new HttpEntity&lt;&gt;(</span>
+<span class="nc" id="L60">                this.createHeaders(settings.getUsername(), settings.getPassword())</span>
+            );
+<span class="nc" id="L62">        this.rest = restOperationsSupplier.get();</span>
+<span class="nc" id="L63">    }</span>
+
+    @Override
+    public List&lt;SonarProject&gt; getProjects(String instanceUrl) {
+<span class="nc" id="L67">        List&lt;SonarProject&gt; projects = new ArrayList&lt;&gt;();</span>
+<span class="nc" id="L68">        String url = instanceUrl + URL_RESOURCES;</span>
+
+        try {
+
+<span class="nc bnc" id="L72" title="All 2 branches missed.">            for (Object obj : parseAsArray(url)) {</span>
+<span class="nc" id="L73">                JSONObject prjData = (JSONObject) obj;</span>
+
+<span class="nc" id="L75">                SonarProject project = new SonarProject();</span>
+<span class="nc" id="L76">                project.setInstanceUrl(instanceUrl);</span>
+<span class="nc" id="L77">                project.setProjectId(str(prjData, ID));</span>
+<span class="nc" id="L78">                project.setProjectName(str(prjData, NAME));</span>
+<span class="nc" id="L79">                projects.add(project);</span>
+<span class="nc" id="L80">            }</span>
+
+<span class="nc" id="L82">        } catch (ParseException e) {</span>
+<span class="nc" id="L83">            LOG.error(&quot;Could not parse response from: &quot; + url, e);</span>
+<span class="nc" id="L84">        } catch (RestClientException rce) {</span>
+<span class="nc" id="L85">            LOG.error(rce);</span>
+<span class="nc" id="L86">        }</span>
+
+<span class="nc" id="L88">        return projects;</span>
+    }
+
+
+    @Override
+    public CodeQuality currentCodeQuality(SonarProject project, String metrics) {
+<span class="nc" id="L94">        String url = String.format(</span>
+<span class="nc" id="L95">                project.getInstanceUrl() + URL_RESOURCE_DETAILS, project.getProjectId(), metrics);</span>
+
+        try {
+<span class="nc" id="L98">            JSONArray jsonArray = parseAsArray(url);</span>
+
+<span class="nc bnc" id="L100" title="All 2 branches missed.">            if (!jsonArray.isEmpty()) {</span>
+<span class="nc" id="L101">                JSONObject prjData = (JSONObject) jsonArray.get(0);</span>
+
+<span class="nc" id="L103">                CodeQuality codeQuality = new CodeQuality();</span>
+<span class="nc" id="L104">                codeQuality.setName(str(prjData, NAME));</span>
+<span class="nc" id="L105">                codeQuality.setUrl(new SonarDashboardUrl(project.getInstanceUrl(), project.getProjectId()).toString());</span>
+<span class="nc" id="L106">                codeQuality.setType(CodeQualityType.StaticAnalysis);</span>
+<span class="nc" id="L107">                codeQuality.setTimestamp(timestamp(prjData, DATE));</span>
+<span class="nc" id="L108">                codeQuality.setVersion(str(prjData, VERSION));</span>
+
+<span class="nc bnc" id="L110" title="All 2 branches missed.">                for (Object metricObj : (JSONArray) prjData.get(MSR)) {</span>
+<span class="nc" id="L111">                    JSONObject metricJson = (JSONObject) metricObj;</span>
+
+<span class="nc" id="L113">                    CodeQualityMetric metric = new CodeQualityMetric(str(metricJson, KEY));</span>
+<span class="nc" id="L114">                    metric.setValue(metricJson.get(VALUE));</span>
+<span class="nc" id="L115">                    metric.setFormattedValue(str(metricJson, FORMATTED_VALUE));</span>
+<span class="nc" id="L116">                    metric.setStatus(metricStatus(str(metricJson, ALERT)));</span>
+<span class="nc" id="L117">                    metric.setStatusMessage(str(metricJson, ALERT_TEXT));</span>
+<span class="nc" id="L118">                    codeQuality.getMetrics().add(metric);</span>
+<span class="nc" id="L119">                }</span>
+
+<span class="nc" id="L121">                return codeQuality;</span>
+            }
+
+<span class="nc" id="L124">        } catch (ParseException e) {</span>
+<span class="nc" id="L125">            LOG.error(&quot;Could not parse response from: &quot; + url, e);</span>
+<span class="nc" id="L126">        } catch (RestClientException rce) {</span>
+<span class="nc" id="L127">            LOG.error(rce);</span>
+<span class="nc" id="L128">        }</span>
+
+<span class="nc" id="L130">        return null;</span>
+    }
+
+    private JSONArray parseAsArray(String url) throws ParseException {
+<span class="nc" id="L134">        ResponseEntity&lt;String&gt; response = rest.exchange(url, HttpMethod.GET, this.httpHeaders, String.class);</span>
+<span class="nc" id="L135">        return (JSONArray) new JSONParser().parse(response.getBody());</span>
+    }
+
+    private long timestamp(JSONObject json, String key) {
+<span class="nc" id="L139">        Object obj = json.get(key);</span>
+<span class="nc bnc" id="L140" title="All 2 branches missed.">        if (obj != null) {</span>
+            try {
+<span class="nc" id="L142">                return new SimpleDateFormat(DATE_FORMAT).parse(obj.toString()).getTime();</span>
+<span class="nc" id="L143">            } catch (java.text.ParseException e) {</span>
+<span class="nc" id="L144">                LOG.error(obj + &quot; is not in expected format &quot; + DATE_FORMAT, e);</span>
+            }
+        }
+<span class="nc" id="L147">        return 0;</span>
+    }
+
+    private String str(JSONObject json, String key) {
+<span class="nc" id="L151">        Object obj = json.get(key);</span>
+<span class="nc bnc" id="L152" title="All 2 branches missed.">        return obj == null ? null : obj.toString();</span>
+    }
+    @SuppressWarnings(&quot;unused&quot;)
+    private Integer integer(JSONObject json, String key) {
+<span class="nc" id="L156">        Object obj = json.get(key);</span>
+<span class="nc bnc" id="L157" title="All 2 branches missed.">        return obj == null ? null : (Integer) obj;</span>
+    }
+
+    @SuppressWarnings(&quot;unused&quot;)
+    private BigDecimal decimal(JSONObject json, String key) {
+<span class="nc" id="L162">        Object obj = json.get(key);</span>
+<span class="nc bnc" id="L163" title="All 2 branches missed.">        return obj == null ? null : new BigDecimal(obj.toString());</span>
+    }
+
+    @SuppressWarnings(&quot;unused&quot;)
+    private Boolean bool(JSONObject json, String key) {
+<span class="nc" id="L168">        Object obj = json.get(key);</span>
+<span class="nc bnc" id="L169" title="All 2 branches missed.">        return obj == null ? null : Boolean.valueOf(obj.toString());</span>
+    }
+
+    private CodeQualityMetricStatus metricStatus(String status) {
+<span class="nc bnc" id="L173" title="All 2 branches missed.">        if (StringUtils.isBlank(status)) {</span>
+<span class="nc" id="L174">            return CodeQualityMetricStatus.Ok;</span>
+        }
+
+<span class="nc bnc" id="L177" title="All 10 branches missed.">        switch(status) {</span>
+<span class="nc" id="L178">            case STATUS_WARN:  return CodeQualityMetricStatus.Warning;</span>
+<span class="nc" id="L179">            case STATUS_ALERT: return CodeQualityMetricStatus.Alert;</span>
+<span class="nc" id="L180">            default:           return CodeQualityMetricStatus.Ok;</span>
+        }
+    }
+
+    private HttpHeaders createHeaders(String username, String password){
+<span class="nc" id="L185">        HttpHeaders headers = new HttpHeaders();</span>
+<span class="nc bnc" id="L186" title="All 6 branches missed.">        if (username != null &amp;&amp; !username.isEmpty() &amp;&amp;</span>
+<span class="nc bnc" id="L187" title="All 2 branches missed.">            password != null &amp;&amp; !password.isEmpty()) {</span>
+<span class="nc" id="L188">          String auth = username + &quot;:&quot; + password;</span>
+<span class="nc" id="L189">          byte[] encodedAuth = Base64.encodeBase64(</span>
+<span class="nc" id="L190">              auth.getBytes(Charset.forName(&quot;US-ASCII&quot;))</span>
+          );
+<span class="nc" id="L192">          String authHeader = &quot;Basic &quot; + new String(encodedAuth);</span>
+<span class="nc" id="L193">          headers.set(&quot;Authorization&quot;, authHeader);</span>
+        }
+<span class="nc" id="L195">        return headers;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.6.201602180812</span></div></body></html>

@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="zh"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>TestCase.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">com.capitalone.dashboard:core</a> &gt; <a href="index.source.html" class="el_package">com.capitalone.dashboard.model</a> &gt; <span class="el_source">TestCase.java</span></div><h1>TestCase.java</h1><pre class="source lang-java linenums">package com.capitalone.dashboard.model;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.Set;
+
+/**
+ * An individual test case in a {@link TestSuite}.
+ */
+<span class="nc" id="L11">public class TestCase {</span>
+    /**
+     * Identifies this test case in the source system
+     */
+    private String id;
+
+    /**
+     * Description of the test case that might make sense to a human
+     */
+    private String description;
+
+    private long duration;
+
+    private int totalTestStepCount;
+    /**
+     * Count of test cases that failed
+     */
+    private int failedTestStepCount;
+
+    /**
+     * Count of test cases that generated an error
+     */
+    private int successTestStepCount;
+
+    /**
+     * Count of test cases that were skipped
+     */
+    private int skippedTestStepCount;
+
+    private int unknownStatusTestStepCount;
+    /**
+     * Status of the test case
+     */
+<span class="nc" id="L44">    private TestCaseStatus status = TestCaseStatus.Unknown;</span>
+
+<span class="nc" id="L46">    private Collection&lt;TestCaseStep&gt; testSteps = new ArrayList&lt;&gt;();</span>
+
+<span class="nc" id="L48">    private Set&lt;String&gt; tags = new HashSet&lt;&gt;();</span>
+
+<span class="nc" id="L50">    private Collection&lt;TestCaseCondition&gt; before = new ArrayList&lt;&gt;();</span>
+
+<span class="nc" id="L52">    private Collection&lt;TestCaseCondition&gt; after = new ArrayList&lt;&gt;();</span>
+
+
+    public String getId() {
+<span class="nc" id="L56">        return id;</span>
+    }
+
+    public void setId(String id) {
+<span class="nc" id="L60">        this.id = id;</span>
+<span class="nc" id="L61">    }</span>
+
+    public String getDescription() {
+<span class="nc" id="L64">        return description;</span>
+    }
+
+    public void setDescription(String description) {
+<span class="nc" id="L68">        this.description = description;</span>
+<span class="nc" id="L69">    }</span>
+
+    public long getDuration() {
+<span class="nc" id="L72">        return duration;</span>
+    }
+
+    public void setDuration(long duration) {
+<span class="nc" id="L76">        this.duration = duration;</span>
+<span class="nc" id="L77">    }</span>
+
+    public int getTotalTestStepCount() {
+<span class="nc" id="L80">        return totalTestStepCount;</span>
+    }
+
+    public void setTotalTestStepCount(int totalTestStepCount) {
+<span class="nc" id="L84">        this.totalTestStepCount = totalTestStepCount;</span>
+<span class="nc" id="L85">    }</span>
+
+    public int getFailedTestStepCount() {
+<span class="nc" id="L88">        return failedTestStepCount;</span>
+    }
+
+    public void setFailedTestStepCount(int failedTestStepCount) {
+<span class="nc" id="L92">        this.failedTestStepCount = failedTestStepCount;</span>
+<span class="nc" id="L93">    }</span>
+
+    public int getSuccessTestStepCount() {
+<span class="nc" id="L96">        return successTestStepCount;</span>
+    }
+
+    public void setSuccessTestStepCount(int successTestStepCount) {
+<span class="nc" id="L100">        this.successTestStepCount = successTestStepCount;</span>
+<span class="nc" id="L101">    }</span>
+
+    public int getSkippedTestStepCount() {
+<span class="nc" id="L104">        return skippedTestStepCount;</span>
+    }
+
+    public void setSkippedTestStepCount(int skippedTestStepCount) {
+<span class="nc" id="L108">        this.skippedTestStepCount = skippedTestStepCount;</span>
+<span class="nc" id="L109">    }</span>
+
+    public int getUnknownStatusCount() {
+<span class="nc" id="L112">        return unknownStatusTestStepCount;</span>
+    }
+
+    public void setUnknownStatusCount(int unknownStatusCount) {
+<span class="nc" id="L116">        this.unknownStatusTestStepCount = unknownStatusCount;</span>
+<span class="nc" id="L117">    }</span>
+
+    public TestCaseStatus getStatus() {
+<span class="nc" id="L120">        return status;</span>
+    }
+
+    public void setStatus(TestCaseStatus status) {
+<span class="nc" id="L124">        this.status = status;</span>
+<span class="nc" id="L125">    }</span>
+
+    public void setTestSteps(Collection&lt;TestCaseStep&gt; testSteps) {
+<span class="nc" id="L128">        this.testSteps = testSteps;</span>
+<span class="nc" id="L129">    }</span>
+
+    public Collection&lt;TestCaseStep&gt; getTestSteps() {
+<span class="nc" id="L132">        return testSteps;</span>
+    }
+
+    public int getUnknownStatusTestStepCount() {
+<span class="nc" id="L136">        return unknownStatusTestStepCount;</span>
+    }
+
+    public void setUnknownStatusTestStepCount(int unknownStatusTestStepCount) {
+<span class="nc" id="L140">        this.unknownStatusTestStepCount = unknownStatusTestStepCount;</span>
+<span class="nc" id="L141">    }</span>
+
+    public Set&lt;String&gt; getTags() {
+<span class="nc" id="L144">        return tags;</span>
+    }
+
+    public Collection&lt;TestCaseCondition&gt; getBefore() {
+<span class="nc" id="L148">        return before;</span>
+    }
+
+    public Collection&lt;TestCaseCondition&gt; getAfter() {
+<span class="nc" id="L152">        return after;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.6.201602180812</span></div></body></html>

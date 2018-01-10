@@ -1,0 +1,257 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="zh"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>HygieiaCodeQualityPublishStep.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Hygieia Publisher Plugin</a> &gt; <a href="index.source.html" class="el_package">jenkins.plugins.hygieia.workflow</a> &gt; <span class="el_source">HygieiaCodeQualityPublishStep.java</span></div><h1>HygieiaCodeQualityPublishStep.java</h1><pre class="source lang-java linenums">package jenkins.plugins.hygieia.workflow;
+
+
+import com.capitalone.dashboard.model.BuildStatus;
+import com.capitalone.dashboard.model.CodeQuality;
+import com.capitalone.dashboard.model.CodeQualityMetric;
+import com.capitalone.dashboard.model.CodeQualityType;
+import com.capitalone.dashboard.model.quality.*;
+import com.capitalone.dashboard.request.CodeQualityCreateRequest;
+import hudson.Extension;
+import hudson.FilePath;
+import hudson.model.Run;
+import hudson.model.TaskListener;
+import hygieia.builder.BuildBuilder;
+import jenkins.model.Jenkins;
+import jenkins.plugins.hygieia.DefaultHygieiaService;
+import jenkins.plugins.hygieia.HygieiaPublisher;
+import jenkins.plugins.hygieia.HygieiaResponse;
+import jenkins.plugins.hygieia.HygieiaService;
+import jenkins.plugins.hygieia.utils.CodeQualityMetricsConverter;
+import org.jenkinsci.plugins.workflow.steps.AbstractStepDescriptorImpl;
+import org.jenkinsci.plugins.workflow.steps.AbstractStepImpl;
+import org.jenkinsci.plugins.workflow.steps.AbstractSynchronousNonBlockingStepExecution;
+import org.jenkinsci.plugins.workflow.steps.StepContextParameter;
+import org.kohsuke.stapler.DataBoundConstructor;
+import org.kohsuke.stapler.DataBoundSetter;
+import org.xml.sax.*;
+
+import javax.inject.Inject;
+import javax.xml.bind.JAXBContext;
+import javax.xml.bind.JAXBException;
+import javax.xml.bind.Unmarshaller;
+import javax.xml.parsers.ParserConfigurationException;
+import javax.xml.parsers.SAXParserFactory;
+import javax.xml.stream.XMLInputFactory;
+import javax.xml.transform.sax.SAXSource;
+import java.io.IOException;
+
+
+public class HygieiaCodeQualityPublishStep extends AbstractStepImpl {
+
+    private String junitFilePattern;
+    private String findbugsFilePattern;
+    private String pmdFilePattern;
+    private String checkstyleFilePattern;
+    private String jacocoFilePattern;
+    private JAXBContext context;
+    private HygieiaService service;
+    private HygieiaPublisher.DescriptorImpl hygieiaDesc;
+
+    @DataBoundConstructor
+<span class="fc" id="L52">    public HygieiaCodeQualityPublishStep() throws JAXBException {</span>
+<span class="fc" id="L53">        context = JAXBContext.newInstance(JunitXmlReport.class, JacocoXmlReport.class,</span>
+                FindBugsXmlReport.class, CheckstyleReport.class, PmdReport.class);
+<span class="pc bpc" id="L55" title="1 of 2 branches missed.">        if (null != Jenkins.getInstance()) {</span>
+<span class="nc" id="L56">            hygieiaDesc = Jenkins.getInstance().getDescriptorByType(HygieiaPublisher.DescriptorImpl.class);</span>
+<span class="nc" id="L57">            service = new DefaultHygieiaService(hygieiaDesc.getHygieiaAPIUrl(), hygieiaDesc.getHygieiaToken(),</span>
+<span class="nc" id="L58">                    hygieiaDesc.getHygieiaJenkinsName(), hygieiaDesc.isUseProxy());</span>
+        }
+
+<span class="fc" id="L61">    }</span>
+
+    public HygieiaPublisher.DescriptorImpl getHygieiaDesc() {
+<span class="nc" id="L64">        return hygieiaDesc;</span>
+    }
+
+    public JAXBContext getContext() {
+<span class="nc" id="L68">        return context;</span>
+    }
+
+    @DataBoundSetter
+    public void setJunitFilePattern(String junitFilePattern) {
+<span class="fc" id="L73">        this.junitFilePattern = junitFilePattern;</span>
+<span class="fc" id="L74">    }</span>
+
+    public String getJunitFilePattern() {
+<span class="fc" id="L77">        return junitFilePattern;</span>
+    }
+
+    @DataBoundSetter
+    public void setFindbugsFilePattern(String findbugsFilePattern) {
+<span class="fc" id="L82">        this.findbugsFilePattern = findbugsFilePattern;</span>
+<span class="fc" id="L83">    }</span>
+
+    public String getFindbugsFilePattern() {
+<span class="fc" id="L86">        return findbugsFilePattern;</span>
+    }
+
+    @DataBoundSetter
+    public void setPmdFilePattern(String pmdFilePattern) {
+<span class="fc" id="L91">        this.pmdFilePattern = pmdFilePattern;</span>
+<span class="fc" id="L92">    }</span>
+
+    public String getPmdFilePattern() {
+<span class="fc" id="L95">        return pmdFilePattern;</span>
+    }
+
+    @DataBoundSetter
+    public void setCheckstyleFilePattern(String checkstyleFilePattern) {
+<span class="fc" id="L100">        this.checkstyleFilePattern = checkstyleFilePattern;</span>
+<span class="fc" id="L101">    }</span>
+
+    public String getCheckstyleFilePattern() {
+<span class="fc" id="L104">        return checkstyleFilePattern;</span>
+    }
+
+    @DataBoundSetter
+    public void setJacocoFilePattern(String jacocoFilePattern) {
+<span class="fc" id="L109">        this.jacocoFilePattern = jacocoFilePattern;</span>
+<span class="fc" id="L110">    }</span>
+
+    public String getJacocoFilePattern() {
+<span class="fc" id="L113">        return jacocoFilePattern;</span>
+    }
+
+    public HygieiaService getService() {
+<span class="nc" id="L117">        return service;</span>
+    }
+
+    public void setService(HygieiaService service) {
+<span class="nc" id="L121">        this.service = service;</span>
+<span class="nc" id="L122">    }</span>
+
+    @Extension
+    public static class DescriptorImpl extends AbstractStepDescriptorImpl {
+
+        public DescriptorImpl() {
+<span class="fc" id="L128">            super(HygieiaCodeQualityPublisherStepExecution.class);</span>
+<span class="fc" id="L129">        }</span>
+
+        @Override
+        public String getDisplayName() {
+<span class="fc" id="L133">            return &quot;Hygieia CodeQuality Publish Step&quot;;</span>
+        }
+
+        @Override
+        public String getFunctionName() {
+<span class="fc" id="L138">            return &quot;hygieiaCodeQualityPublishStep&quot;;</span>
+        }
+
+    }
+
+<span class="fc" id="L143">    public static class HygieiaCodeQualityPublisherStepExecution extends AbstractSynchronousNonBlockingStepExecution&lt;Void&gt; {</span>
+
+        private static final long serialVersionUID = 1L;
+
+        @Inject
+        transient HygieiaCodeQualityPublishStep step;
+
+        @StepContextParameter
+        transient TaskListener listener;
+
+        @StepContextParameter
+        transient Run run;
+
+        @StepContextParameter
+        transient FilePath filepath;
+
+        @Override
+        protected Void run() throws Exception {
+<span class="fc" id="L161">            HygieiaService service = step.getService();</span>
+
+
+<span class="fc" id="L164">            BuildBuilder buildBuilder = new BuildBuilder(run, step.getHygieiaDesc().getHygieiaJenkinsName(), listener, BuildStatus.Success, false);</span>
+<span class="fc" id="L165">            HygieiaResponse buildResponse = service.publishBuildData(buildBuilder.getBuildData());</span>
+<span class="fc" id="L166">            CodeQualityMetricsConverter converter = new CodeQualityMetricsConverter();</span>
+<span class="fc" id="L167">            Unmarshaller unmarshaller = step.getContext().createUnmarshaller();</span>
+
+            // junit
+<span class="fc bfc" id="L170" title="All 4 branches covered.">            if (null!=step.getJunitFilePattern() &amp;&amp; !step.getJunitFilePattern().isEmpty()) {</span>
+<span class="fc" id="L171">                FilePath[] filePaths = filepath.list(step.getJunitFilePattern());</span>
+<span class="fc bfc" id="L172" title="All 2 branches covered.">                for (FilePath junit : filePaths) {</span>
+<span class="fc" id="L173">                    JunitXmlReport report = unmarshall(unmarshaller, junit);</span>
+<span class="fc" id="L174">                    report.accept(converter);</span>
+                }
+            }
+
+            // pmd
+<span class="fc bfc" id="L179" title="All 4 branches covered.">            if (null!=step.getPmdFilePattern() &amp;&amp; !step.getPmdFilePattern().isEmpty()) {</span>
+<span class="fc" id="L180">                FilePath[] filePaths = filepath.list(step.getPmdFilePattern());</span>
+<span class="fc bfc" id="L181" title="All 2 branches covered.">                for (FilePath pmd : filePaths) {</span>
+<span class="fc" id="L182">                    PmdReport report = unmarshall(unmarshaller, pmd);</span>
+<span class="fc" id="L183">                    report.accept(converter);</span>
+                }
+            }
+
+            // findbugs
+<span class="fc bfc" id="L188" title="All 4 branches covered.">            if (null!=step.getFindbugsFilePattern() &amp;&amp; !step.getFindbugsFilePattern().isEmpty()) {</span>
+<span class="fc" id="L189">                FilePath[] filePaths = filepath.list(step.getFindbugsFilePattern());</span>
+<span class="fc bfc" id="L190" title="All 2 branches covered.">                for (FilePath findbugs : filePaths) {</span>
+<span class="fc" id="L191">                    FindBugsXmlReport report = unmarshall(unmarshaller, findbugs);</span>
+<span class="fc" id="L192">                    report.accept(converter);</span>
+                }
+            }
+
+            // checkstyle
+<span class="fc bfc" id="L197" title="All 4 branches covered.">            if (null!=step.getCheckstyleFilePattern() &amp;&amp; !step.getCheckstyleFilePattern().isEmpty()) {</span>
+<span class="fc" id="L198">                FilePath[] filePaths = filepath.list(step.getCheckstyleFilePattern());</span>
+<span class="fc bfc" id="L199" title="All 2 branches covered.">                for (FilePath checkstyle : filePaths) {</span>
+<span class="fc" id="L200">                    CheckstyleReport report = unmarshall(unmarshaller, checkstyle);</span>
+<span class="fc" id="L201">                    report.accept(converter);</span>
+                }
+            }
+
+            //jacoco
+<span class="fc bfc" id="L206" title="All 4 branches covered.">            if (null!=step.getJacocoFilePattern() &amp;&amp; !step.getJacocoFilePattern().isEmpty()) {</span>
+<span class="fc" id="L207">                FilePath[] filePaths = filepath.list(step.getJacocoFilePattern());</span>
+<span class="fc bfc" id="L208" title="All 2 branches covered.">                for (FilePath checkstyle : filePaths) {</span>
+<span class="fc" id="L209">                    JacocoXmlReport report = unmarshall(unmarshaller, checkstyle);</span>
+<span class="fc" id="L210">                    report.accept(converter);</span>
+                }
+            }
+
+
+            // results
+<span class="fc" id="L216">            CodeQuality codeQuality = converter.produceResult();</span>
+
+<span class="fc" id="L218">            CodeQualityCreateRequest request = convertToRequest(codeQuality);</span>
+<span class="fc" id="L219">            request.setProjectName(run.getParent().getFullName());</span>
+<span class="fc" id="L220">            request.setProjectUrl(run.getParent().getUrl());</span>
+<span class="fc" id="L221">            request.setNiceName(step.getHygieiaDesc().getHygieiaJenkinsName());</span>
+<span class="fc" id="L222">            request.setType(CodeQualityType.StaticAnalysis);</span>
+<span class="fc" id="L223">            request.setTimestamp(run.getTimeInMillis());</span>
+<span class="fc" id="L224">            request.setProjectVersion(run.getId());</span>
+<span class="fc" id="L225">            request.setHygieiaId(buildResponse.getResponseValue());</span>
+<span class="fc" id="L226">            request.setProjectId(run.getParent().getFullName());</span>
+<span class="fc" id="L227">            request.setServerUrl(run.getParent().getAbsoluteUrl());</span>
+
+<span class="fc" id="L229">            service.publishSonarResults(request);</span>
+<span class="fc" id="L230">            return null;</span>
+        }
+
+        private CodeQualityCreateRequest convertToRequest(CodeQuality quality) {
+<span class="fc" id="L234">            CodeQualityCreateRequest request = new CodeQualityCreateRequest();</span>
+<span class="fc bfc" id="L235" title="All 2 branches covered.">            for (CodeQualityMetric metric : quality.getMetrics()) {</span>
+<span class="fc" id="L236">                request.getMetrics().add(metric);</span>
+<span class="fc" id="L237">            }</span>
+
+<span class="fc" id="L239">            return request;</span>
+        }
+
+        private &lt;T&gt; T unmarshall(Unmarshaller unmarshaller, FilePath path) throws IOException, InterruptedException, JAXBException, SAXException, ParserConfigurationException {
+<span class="fc" id="L243">            SAXParserFactory spf = SAXParserFactory.newInstance();</span>
+<span class="fc" id="L244">            spf.setFeature(&quot;http://apache.org/xml/features/nonvalidating/load-external-dtd&quot;, false);</span>
+<span class="fc" id="L245">            spf.setFeature(&quot;http://xml.org/sax/features/validation&quot;, false);</span>
+
+<span class="fc" id="L247">            XMLReader xmlReader = spf.newSAXParser().getXMLReader();</span>
+<span class="fc" id="L248">            InputSource inputSource = new InputSource(</span>
+<span class="fc" id="L249">                    path.read());</span>
+<span class="fc" id="L250">            SAXSource source = new SAXSource(xmlReader, inputSource);</span>
+
+            //TODO prevent malicious xml attack, or ignore? (https://www.owasp.org/index.php/XML_External_Entity_(XXE)_Prevention_Cheat_Sheet#SAXTransformerFactory)
+<span class="fc" id="L253">            return (T) unmarshaller.unmarshal(source);</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.0.201801022044</span></div></body></html>
